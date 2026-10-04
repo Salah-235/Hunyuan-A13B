@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}{{ t('login_title') }} — {{ app_name }}{% endblock %}
+{% block body_class %}auth-page{% endblock %}
+{% block body %}
+<main class="auth-wrap">
+  <div class="auth-top">{% include "_topbar_lang.html" %}</div>
+  <section class="auth-card">
+    <div class="brand brand-lg">
+      <svg class="logo"><use href="#i-logo"/></svg>
+      <div>
+        <h1>{{ app_name }}</h1>
+        <p class="muted">{{ t('app_tagline') }}</p>
+      </div>
+    </div>
+    <form method="post" class="form" autocomplete="on" novalidate>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {% if error %}<div class="alert alert-error" role="alert">{{ t(error, **error_args) }}</div>{% endif %}
+      <label class="field">
+        <span>{{ t('username') }}</span>
+        <input name="username" value="{{ username }}" autocomplete="username" autocapitalize="none" spellcheck="false" dir="ltr" required autofocus>
+      </label>
+      <label class="field">
+        <span>{{ t('password') }}</span>
+        <input name="password" type="password" autocomplete="current-password" dir="ltr" required>
+      </label>
+      <button class="btn btn-primary btn-block" type="submit">
+        <svg class="icon"><use href="#i-lock"/></svg>{{ t('login_button') }}
+      </button>
+    </form>
+    <p class="notice"><svg class="icon"><use href="#i-lock"/></svg>{{ t('confidential_notice') }}</p>
+  </section>
+</main>
+{% endblock %}

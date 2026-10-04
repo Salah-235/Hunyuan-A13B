@@ -1,0 +1,63 @@
+<header class="topbar">
+  {% if page == 'chat' %}
+  <button class="icon-btn only-mobile" id="open-sources" type="button" aria-label="{{ t('sources') }}">
+    <svg class="icon"><use href="#i-docs"/></svg>
+  </button>
+  {% endif %}
+  <a class="brand" href="/">
+    <svg class="logo"><use href="#i-logo"/></svg>
+    <span class="brand-name">{{ app_name }}</span>
+  </a>
+  <div class="spacer"></div>
+  <nav class="top-actions">
+    {% if page == 'chat' %}
+    <button class="btn btn-ghost" id="new-chat" type="button" title="{{ t('new_chat') }}">
+      <svg class="icon"><use href="#i-plus"/></svg><span class="hide-sm">{{ t('new_chat') }}</span>
+    </button>
+    {% if user.role == 'admin' %}
+    <a class="btn btn-ghost" href="/admin" title="{{ t('admin_panel') }}">
+      <svg class="icon"><use href="#i-settings"/></svg><span class="hide-sm">{{ t('admin_panel') }}</span>
+    </a>
+    {% endif %}
+    {% else %}
+    <a class="btn btn-ghost" href="/" title="{{ t('back_to_chat') }}">
+      <svg class="icon"><use href="#i-chat"/></svg><span class="hide-sm">{{ t('back_to_chat') }}</span>
+    </a>
+    {% endif %}
+    <a class="btn btn-ghost lang-btn" href="/lang/{{ other_lang }}?next={{ request.path|urlencode }}" title="{{ t('other_lang_label') }}">
+      <svg class="icon"><use href="#i-globe"/></svg><span>{{ 'FR' if lang == 'ar' else 'ع' }}</span>
+    </a>
+    <details class="user-menu">
+      <summary class="avatar" title="{{ user.display_name }}">{{ (user.display_name or user.username)[:1]|upper }}</summary>
+      <div class="menu">
+        <div class="menu-head">
+          <strong>{{ user.display_name }}</strong>
+          <span class="muted" dir="ltr">@{{ user.username }} · {{ t('role_admin') if user.role == 'admin' else t('role_user') }}</span>
+        </div>
+        <button type="button" class="menu-item hidden" id="install-app"><svg class="icon"><use href="#i-install"/></svg>{{ t('install_app') }}</button>
+        <button type="button" class="menu-item" data-open-dialog="pw-dialog"><svg class="icon"><use href="#i-lock"/></svg>{{ t('change_password') }}</button>
+        <form method="post" action="/logout">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="menu-item danger"><svg class="icon"><use href="#i-logout"/></svg>{{ t('logout') }}</button>
+        </form>
+      </div>
+    </details>
+  </nav>
+</header>
+
+<dialog id="pw-dialog" class="dialog">
+  <form class="form" id="pw-form" novalidate>
+    <div class="dialog-head">
+      <h2>{{ t('change_password') }}</h2>
+      <button type="button" class="icon-btn" data-close-dialog aria-label="{{ t('close') }}"><svg class="icon"><use href="#i-close"/></svg></button>
+    </div>
+    <div class="alert hidden" data-role="msg"></div>
+    <label class="field"><span>{{ t('current_password') }}</span><input type="password" name="current" dir="ltr" autocomplete="current-password" required></label>
+    <label class="field"><span>{{ t('new_password') }}</span><input type="password" name="new" dir="ltr" autocomplete="new-password" minlength="8" required></label>
+    <label class="field"><span>{{ t('confirm_password') }}</span><input type="password" name="confirm" dir="ltr" autocomplete="new-password" minlength="8" required></label>
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-ghost" data-close-dialog>{{ t('cancel') }}</button>
+      <button type="submit" class="btn btn-primary">{{ t('save') }}</button>
+    </div>
+  </form>
+</dialog>

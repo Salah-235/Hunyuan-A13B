@@ -1,0 +1,42 @@
+# Start the assistant only (pointing to an AI server you already run):
+#   docker compose up -d app
+# Start the assistant together with Hunyuan-A13B on this machine's NVIDIA GPUs:
+#   docker compose --profile gpu up -d
+# The first-run setup code is printed in:  docker compose logs app
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATA_DIR: /data
+      # When using the bundled "hunyuan" service below:
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://hunyuan:8000/v1}
+      LLM_MODEL: ${LLM_MODEL:-tencent/Hunyuan-A13B-Instruct}
+    volumes:
+      - bank-data:/data
+
+  hunyuan:
+    profiles: ["gpu"]
+    image: hunyuaninfer/hunyuan-a13b:hunyuan-moe-A13B-vllm
+    restart: unless-stopped
+    ipc: host
+    entrypoint: ["python", "-m", "vllm.entrypoints.openai.api_server"]
+    command: ["--host", "0.0.0.0", "--port", "8000", "--tensor-parallel-size", "4",
+              "--model", "tencent/Hunyuan-A13B-Instruct", "--trust-remote-code"]
+    volumes:
+      - ~/.cache:/root/.cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  bank-data:

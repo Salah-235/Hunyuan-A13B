@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% set page = 'admin' %}
+{% block title %}{{ t('admin_panel') }} — {{ app_name }}{% endblock %}
+{% block body_class %}admin-page{% endblock %}
+{% block body %}
+<div class="app">
+  {% include "_header.html" %}
+  <main class="admin">
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-tab="documents" role="tab"><svg class="icon"><use href="#i-docs"/></svg>{{ t('tab_documents') }}</button>
+      <button class="tab" data-tab="users" role="tab"><svg class="icon"><use href="#i-user"/></svg>{{ t('tab_users') }}</button>
+      <button class="tab" data-tab="activity" role="tab"><svg class="icon"><use href="#i-refresh"/></svg>{{ t('tab_activity') }}</button>
+      <button class="tab" data-tab="system" role="tab"><svg class="icon"><use href="#i-settings"/></svg>{{ t('tab_system') }}</button>
+    </nav>
+
+    <section class="tab-panel" id="tab-documents">
+      <div class="card">
+        <label class="dropzone" id="dropzone">
+          <input type="file" id="file-input" multiple accept=".pdf,.docx,.xlsx,.csv,.txt,.md">
+          <svg class="icon icon-xl"><use href="#i-upload"/></svg>
+          <strong>{{ t('upload_drop') }}</strong>
+          <span class="muted small">{{ t('upload_hint', mb=max_upload_mb) }}</span>
+        </label>
+        <label class="field field-inline">
+          <span>{{ t('category') }}</span>
+          <input id="upload-category" class="input" list="category-list" maxlength="80" placeholder="{{ t('category_placeholder') }}">
+          <datalist id="category-list"></datalist>
+        </label>
+        <div id="upload-status" class="upload-status"></div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <h2>{{ t('tab_documents') }} <span class="badge" id="doc-count">0</span></h2>
+          <input type="search" id="doc-filter" class="input input-sm" placeholder="{{ t('filter') }}">
+        </div>
+        <div id="doc-list" class="doc-list"><p class="muted pad">{{ t('loading') }}</p></div>
+      </div>
+    </section>
+
+    <section class="tab-panel" id="tab-users" hidden>
+      <div class="card">
+        <h2>{{ t('add_user') }}</h2>
+        <p class="muted small">{{ t('users_hint') }}</p>
+        <form id="user-form" class="grid-form" novalidate>
+          <label class="field"><span>{{ t('display_name') }}</span><input name="display_name" class="input" maxlength="80"></label>
+          <label class="field"><span>{{ t('username') }}</span><input name="username" class="input" dir="ltr" autocapitalize="none" autocomplete="off" required></label>
+          <label class="field"><span>{{ t('password') }}</span><input name="password" class="input" type="text" dir="ltr" autocomplete="off" minlength="8" required></label>
+          <label class="field"><span>{{ t('role') }}</span>
+            <select name="role" class="input"><option value="user">{{ t('role_user') }}</option><option value="admin">{{ t('role_admin') }}</option></select>
+          </label>
+          <button type="submit" class="btn btn-primary"><svg class="icon"><use href="#i-plus"/></svg>{{ t('add_user') }}</button>
+        </form>
+        <div class="alert hidden" id="user-msg"></div>
+      </div>
+      <div class="card"><div id="user-list" class="user-list"></div></div>
+    </section>
+
+    <section class="tab-panel" id="tab-activity" hidden>
+      <div class="card">
+        <div class="card-head">
+          <h2>{{ t('tab_activity') }}</h2>
+          <input type="search" id="audit-filter" class="input input-sm" placeholder="{{ t('filter') }}">
+        </div>
+        <div id="audit-list" class="table-wrap"></div>
+      </div>
+    </section>
+
+    <section class="tab-panel" id="tab-system" hidden>
+      <div class="stats" id="stats"></div>
+      <div class="card">
+        <dl class="kv" id="system-info"></dl>
+        <div class="row-actions">
+          <button class="btn btn-outline" id="check-connection" type="button"><svg class="icon"><use href="#i-refresh"/></svg>{{ t('check_connection') }}</button>
+          <span id="check-result" class="small"></span>
+        </div>
+        <p class="muted small">{{ t('system_hint') }}</p>
+      </div>
+    </section>
+  </main>
+</div>
+
+<dialog id="doc-dialog" class="dialog">
+  <form class="form" id="doc-form" novalidate>
+    <div class="dialog-head">
+      <h2>{{ t('edit_document') }}</h2>
+      <button type="button" class="icon-btn" data-close-dialog aria-label="{{ t('close') }}"><svg class="icon"><use href="#i-close"/></svg></button>
+    </div>
+    <label class="field"><span>{{ t('doc_title') }}</span><input name="title" class="input" maxlength="200" required></label>
+    <label class="field"><span>{{ t('category') }}</span><input name="category" class="input" list="category-list" maxlength="80"></label>
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-ghost" data-close-dialog>{{ t('cancel') }}</button>
+      <button type="submit" class="btn btn-primary">{{ t('save') }}</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="reset-dialog" class="dialog">
+  <form class="form" id="reset-form" novalidate>
+    <div class="dialog-head">
+      <h2 data-role="title"></h2>
+      <button type="button" class="icon-btn" data-close-dialog aria-label="{{ t('close') }}"><svg class="icon"><use href="#i-close"/></svg></button>
+    </div>
+    <div class="alert hidden" data-role="msg"></div>
+    <label class="field"><span>{{ t('new_password') }}</span><input name="password" class="input" type="text" dir="ltr" autocomplete="off" minlength="8" required></label>
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-ghost" data-close-dialog>{{ t('cancel') }}</button>
+      <button type="submit" class="btn btn-primary">{{ t('save') }}</button>
+    </div>
+  </form>
+</dialog>
+{% endblock %}
+{% block scripts %}<script src="/static/js/admin.js?v={{ asset_version }}"></script>{% endblock %}
