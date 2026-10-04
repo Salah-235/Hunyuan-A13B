@@ -1,0 +1,134 @@
+[
+ {
+  "meta": {
+   "title": "نظام القروض العقارية للأفراد",
+   "filename": "نظام القروض العقارية للأفراد.pdf",
+   "ext": ".pdf",
+   "category": "القروض",
+   "pages": 2,
+   "chunks": 5,
+   "size": 28665,
+   "created": "2026-10-04T00:00:00.000Z",
+   "ver": 1,
+   "sample": true,
+   "warning": "",
+   "id": "sample-loans-ar"
+  },
+  "items": [
+   {
+    "text": "نظام القروض العقارية للأفراد\nيحدد هذا النظام الشروط والإجراءات المتعلقة بمنح القروض العقارية لزبائن البنك من\nالأفراد.",
+    "p0": 1,
+    "p1": 1,
+    "h": ""
+   },
+   {
+    "text": "الفصل الأول: أحكام عامة\nالمادة 1: يهدف القرض العقاري إلى تمويل شراء مسكن أو بنائه أو توسيعه أو تهيئته.\nالمادة 2: يستفيد من القرض العقاري كل شخص طبيعي جزائري الجنسية مقيم، يتراوح\nعمره بين 19 و 70 سنة عند نهاية مدة القرض.",
+    "p0": 1,
+    "p1": 1,
+    "h": "الفصل الأول: أحكام عامة"
+   },
+   {
+    "text": "الفصل الثاني: شروط المنح\nالمادة 3: يجب ألا يتجاوز مبلغ القسط الشهري 30% من الدخل الشهري الصافي للمقترض.\nالمادة 4: تبلغ المدة القصوى للقرض العقاري 30 سنة، ولا تقل عن 5 سنوات.\nالمادة 5: يمكن أن يصل مبلغ القرض إلى 90% من قيمة العقار حسب تقرير الخبرة.",
+    "p0": 1,
+    "p1": 1,
+    "h": "الفصل الثاني: شروط المنح"
+   },
+   {
+    "text": "الفصل الثالث: نسبة الفائدة والضمانات\nالمادة 6: تحدد نسبة الفائدة السنوية للقرض العقاري ب 6.5% ثابتة طوال مدة القرض.\nالمادة 7: يشترط لمنح القرض رهن عقاري من الدرجة الأولى لصالح البنك، واكتتاب تأمين\nعلى الحياة وتأمين ضد الكوارث الطبيعية.",
+    "p0": 2,
+    "p1": 2,
+    "h": "الفصل الثالث: نسبة الفائدة والضمانات"
+   },
+   {
+    "text": "الفصل الرابع: الملف المطلوب\nالمادة 8: يتكون ملف طلب القرض من: نسخة من بطاقة التعريف الوطنية، شهادة عمل\nحديثة، كشوف الرواتب للأشهر الثلاثة الأخيرة، وعد بالبيع أو رخصة البناء.\nالمادة 9: يدرس الملف في أجل أقصاه 15 يوم عمل من تاريخ إيداعه كاملاً.",
+    "p0": 2,
+    "p1": 2,
+    "h": "الفصل الرابع: الملف المطلوب"
+   }
+  ]
+ },
+ {
+  "meta": {
+   "title": "جدول نسب الفائدة",
+   "filename": "جدول نسب الفائدة.pdf",
+   "ext": ".pdf",
+   "category": "القروض",
+   "pages": 1,
+   "chunks": 1,
+   "size": 19741,
+   "created": "2026-10-04T00:00:00.000Z",
+   "ver": 2,
+   "sample": true,
+   "warning": "",
+   "id": "sample-rates-ar"
+  },
+  "items": [
+   {
+    "text": "الفصل الخامس: جدول نسب الفائدة\nالرقم | المنتج | النسبة | المبلغ الأقصى\n1 | القرض العقاري | 6.5% | 5000000\n2 | قرض السيارة | 8% | 1500000\nArticle 7 : Remboursement anticipé\nL'emprunteur peut rembourser par anticipation tout ou\npartie du capital restant dû moyennant une indemnité de 3 %.",
+    "p0": 1,
+    "p1": 1,
+    "h": "الفصل الخامس: جدول نسب الفائدة"
+   }
+  ]
+ },
+ {
+  "meta": {
+   "title": "Conditions du crédit à la consommation",
+   "filename": "Conditions du credit a la consommation.docx",
+   "ext": ".docx",
+   "category": "Crédits",
+   "pages": 0,
+   "chunks": 3,
+   "size": 37388,
+   "created": "2026-10-04T00:00:00.000Z",
+   "ver": 3,
+   "sample": true,
+   "warning": "",
+   "id": "sample-credit-fr"
+  },
+  "items": [
+   {
+    "text": "Conditions générales du crédit à la consommation\nArticle 1 : Le crédit à la consommation finance l'acquisition de biens durables de production nationale (électroménager, véhicules, meubles).\nArticle 2 : Le crédit est accordé aux salariés titulaires d'un contrat de travail à durée indéterminée justifiant d'une ancienneté minimale de 12 mois.\nArticle 3 : La durée maximale du crédit à la consommation est de 60 mois. La durée minimale est de 12 mois.",
+    "p0": null,
+    "p1": null,
+    "h": "Conditions générales du crédit à la consommation"
+   },
+   {
+    "text": "Article 4 : Le taux d'intérêt annuel est fixé à 8,25 % hors taxes pour les montants inférieurs ou égaux à 500 000 DA, et à 7,75 % au-delà.\nArticle 5 : Les mensualités ne peuvent excéder 30 % du revenu net mensuel de l'emprunteur.\nArticle 6 : Un apport personnel de 10 % du prix du bien est exigé.\nArticle 7 : L'emprunteur souscrit obligatoirement une assurance décès-invalidité couvrant le capital restant dû.\nArticle 8 : Le remboursement anticipé total ou partiel est autorisé sans pénalité après le sixième mois.",
+    "p0": null,
+    "p1": null,
+    "h": "Conditions générales du crédit à la consommation › Article 4 : Le taux d'intérêt annuel est fixé à 8,25 % hors taxes pour les montants inférieurs ou égaux à 500 000 DA, et"
+   },
+   {
+    "text": "Article 9 : Tout retard de paiement supérieur à 30 jours entraîne des pénalités de retard de 2 % par mois sur l'échéance impayée.\nMontant | Taux annuel HT\nJusqu'à 500 000 DA | 8,25 %\nPlus de 500 000 DA | 7,75 %",
+    "p0": null,
+    "p1": null,
+    "h": "Conditions générales du crédit à la consommation › Article 9 : Tout retard de paiement supérieur à 30 jours entraîne des pénalités de retard de 2 % par mois sur l'échéance"
+   }
+  ]
+ },
+ {
+  "meta": {
+   "title": "Tarifs des cartes bancaires",
+   "filename": "Tarifs des cartes.xlsx",
+   "ext": ".xlsx",
+   "category": "البطاقات",
+   "pages": 1,
+   "chunks": 1,
+   "size": 5010,
+   "created": "2026-10-04T00:00:00.000Z",
+   "ver": 4,
+   "sample": true,
+   "warning": "",
+   "id": "sample-cards"
+  },
+  "items": [
+   {
+    "text": "Tarifs cartes\nCarte | Frais annuels | Plafond retrait / jour | Plafond paiement / mois\nCarte: CIB Classic | Frais annuels: 1 200 DA | Plafond retrait / jour: 40 000 DA | Plafond paiement / mois: 100 000 DA\nCarte: CIB Gold | Frais annuels: 3 000 DA | Plafond retrait / jour: 100 000 DA | Plafond paiement / mois: 300 000 DA\nCarte: Visa Classic | Frais annuels: 4 500 DA | Plafond retrait / jour: 60 000 DA | Plafond paiement / mois: 200 000 DA\nCarte: Visa Gold | Frais annuels: 9 000 DA | Plafond retrait / jour: 150 000 DA | Plafond paiement / mois: 500 000 DA",
+    "p0": 1,
+    "p1": 1,
+    "h": "Tarifs cartes"
+   }
+  ]
+ }
+]

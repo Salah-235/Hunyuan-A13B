@@ -1,8 +1,16 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f4c5c">
 <title>مساعد الوثائق البنكية</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap">
 <style>
+body { margin: 0; }
+[hidden] { display: none !important; }
 /* Layout: one-screen app — top bar, sources panel (drawer on phones) beside a chat column. */
 :root {
   --bg: #eef3f4; --surface: #ffffff; --surface-2: #f6f9f9; --ink: #13232a; --muted: #586a72;
@@ -113,6 +121,22 @@ input[type="checkbox"] { width: 16px; height: 16px; margin: 4px 0 0; accent-colo
 .up-row[data-state="bad"] { background: var(--bad-soft); flex-direction: column; }
 .up-row[data-state="bad"] .up-state { color: var(--bad); white-space: normal; }
 .memory-note { margin: 0; font-size: .74rem; color: var(--muted); }
+.up-row[data-state="warn"] .up-state { color: var(--bad); }
+.key-banner { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 16px; background: var(--brand-soft); border-bottom: 1px solid var(--line); font-size: .86rem; font-weight: 600; }
+.btn-key { border: 0; border-radius: 10px; padding: 7px 14px; background: var(--brand); color: var(--on-brand); font-weight: 600; cursor: pointer; }
+.btn-key:disabled { opacity: .5; cursor: default; }
+#no-docs .btn-key { margin-top: 12px; }
+.settings-card { max-height: 92%; }
+.settings-body { padding: 14px 16px 18px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
+.set-label { font-weight: 600; font-size: .86rem; margin-top: 4px; }
+.key-row { display: flex; gap: 8px; }
+.key-row .field { flex: 1; min-width: 0; font-family: ui-monospace, Menlo, Consolas, monospace; }
+.set-note { margin: 0; font-size: .76rem; color: var(--muted); }
+.set-check { display: flex; gap: 8px; align-items: flex-start; font-size: .84rem; margin-top: 6px; cursor: pointer; }
+.set-status { margin: 4px 0 0; font-size: .84rem; min-height: 1.2em; color: var(--muted); }
+.set-status.ok { color: var(--ok); font-weight: 600; } .set-status.bad { color: var(--bad); font-weight: 600; }
+.set-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.set-warn { color: var(--ink); background: var(--gold-soft); border: 1px solid var(--gold); border-radius: 8px; padding: 6px 9px; }
 .backdrop { display: none; }
 
 .chat { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
@@ -210,6 +234,8 @@ details.more .cards { margin-top: 8px; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>
 
+</head>
+<body>
 <div class="app">
   <header class="bar">
     <button type="button" class="icon-btn only-phone" id="open-panel" data-tl="sources" aria-controls="panel" aria-expanded="false">
@@ -220,6 +246,9 @@ details.more .cards { margin-top: 8px; }
       <span class="brand-name" data-t="appName">مساعد الوثائق البنكية</span>
       <span class="pill" data-t="demo">نسخة تجريبية</span>
     </div>
+    <button type="button" class="icon-btn" id="open-settings" data-tl="settings">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    </button>
     <button type="button" class="btn" id="new-chat" data-tl="newChat">
       <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span class="hide-sm" data-t="newChat">محادثة جديدة</span>
     </button>
@@ -229,6 +258,7 @@ details.more .cards { margin-top: 8px; }
   </header>
   <div class="notice" id="notice"><p><span data-t="notice"></span> <a href="https://github.com/Salah-235/Hunyuan-A13B/tree/claude/new-app-y67n4p/bank_assistant" target="_blank" rel="noopener" data-t="fullApp">النسخة الكاملة على GitHub</a></p>
     <button type="button" class="icon-btn notice-x" id="notice-x" data-tl="close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+  <div class="key-banner" id="key-banner" hidden><span data-t="needKeyTitle"></span><button type="button" class="btn-key" id="banner-add-key" data-t="addKey"></button></div>
 
   <div class="main">
     <aside class="panel" id="panel">
@@ -268,6 +298,7 @@ details.more .cards { margin-top: 8px; }
           <div id="no-docs" hidden>
             <h1 data-t="noDocsTitle"></h1>
             <p id="no-docs-text"></p>
+            <button type="button" class="btn-key" id="add-examples" data-t="addExamples"></button>
           </div>
         </div>
       </div>
@@ -292,11 +323,36 @@ details.more .cards { margin-top: 8px; }
     <p class="reader-text" id="reader-text" dir="auto"></p>
   </div>
 </div>
+<div class="reader" id="settings" hidden role="dialog" aria-modal="true" aria-labelledby="settings-title">
+  <form class="reader-card settings-card" id="settings-form" autocomplete="off" novalidate>
+    <header><div><h3 id="settings-title" data-t="settings"></h3></div>
+      <button type="button" class="icon-btn" id="settings-close" data-tl="close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></header>
+    <div class="settings-body">
+      <label class="set-label" for="key-input" data-t="apiKey"></label>
+      <div class="key-row"><input id="key-input" class="field" type="password" dir="ltr" placeholder="sk-..." spellcheck="false" autocomplete="off" autocapitalize="off"><button type="button" class="btn-plain" id="key-toggle"></button></div>
+      <p class="set-note" data-t="keyNote"></p>
+      <label class="set-check"><input type="checkbox" id="remember-input"><span data-t="remember"></span></label>
+      <p class="set-note set-warn" data-t="securityNote"></p>
+      <label class="set-label" for="model-input" data-t="model"></label>
+      <input id="model-input" class="field" dir="ltr" list="model-list" spellcheck="false" autocomplete="off" autocapitalize="off">
+      <datalist id="model-list"></datalist>
+      <p class="set-note" data-t="modelHint"></p>
+      <label class="set-check"><input type="checkbox" id="sem-input"><span data-t="semantic"></span></label>
+      <p class="set-status" id="set-status" role="status"></p>
+      <div class="set-actions"><button type="submit" class="btn-key" data-t="saveTest"></button><button type="button" class="btn-plain" id="key-remove" data-t="removeKey"></button></div>
+    </div>
+  </form>
+</div>
 <div class="toast" id="toast" role="status"></div>
 
 <script>
 /*CORE*/
 </script>
 <script>
+/*SAMPLES*/
+</script>
+<script>
 /*APP*/
 </script>
+</body>
+</html>

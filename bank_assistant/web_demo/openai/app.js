@@ -1,4 +1,4 @@
-/* Page logic: storage (db capability or memory), file parsing, search, answers via the sample capability. */
+/* Standalone page: documents stored in this browser (IndexedDB), answers written by OpenAI with the user's own key. */
 (() => {
   "use strict";
 
@@ -6,8 +6,8 @@
   const STR = {
     ar: {
       dir: "rtl", other: "fr", otherLabel: "FR",
-      appName: "مساعد الوثائق البنكية", demo: "نسخة تجريبية",
-      notice: "نسخة تجريبية داخل Claude: الوثائق تُحفظ في هذه الصفحة، ومقاطعها تُرسل إلى Claude عند كل سؤال. لا ترفع وثائق سرية حقيقية هنا، فالنسخة المخصصة للبنك تعمل على خوادمه الداخلية.",
+      appName: "مساعد الوثائق البنكية", demo: "على جهازك",
+      notice: "الوثائق ومفتاح OpenAI محفوظة في هذا المتصفح فقط. عند كل سؤال تُرسل مقاطع الوثائق المتعلقة به إلى OpenAI، فتأكد أن سياسة البنك تسمح بذلك.",
       fullApp: "النسخة الكاملة على GitHub",
       newChat: "محادثة جديدة", sources: "المصادر", close: "إغلاق",
       searchSources: "ابحث في المصادر…", selectAll: "تحديد الكل", selectNone: "إلغاء الكل",
@@ -15,37 +15,53 @@
       pages: (n) => `${n} صفحات`, sheets: (n) => `${n} أوراق`, chunks: (n) => `${n} مقطع`,
       addDocs: "إضافة وثائق", drop: "اسحب الملفات هنا أو اضغط للاختيار", dropHint: "PDF، Word، Excel، CSV، نص",
       category: "التصنيف (اختياري)", categoryPh: "مثال: القروض، البطاقات",
-      reading: "جارٍ القراءة…", saving: "جارٍ الحفظ…", done: "تمت الإضافة", failed: "تعذرت القراءة",
+      reading: "جارٍ القراءة…", saving: "جارٍ الحفظ…", embedding: "جارٍ الفهرسة الدلالية…", done: "تمت الإضافة", failed: "تعذرت القراءة",
+      embedFailed: "أضيفت، وسيُكمَل البحث الدلالي لاحقاً",
       scanned: "يبدو أن الملف ممسوح ضوئياً (صور) ولا نص فيه.", unsupported: "نوع الملف غير مدعوم.", noText: "لم يُعثر على نص في الملف.",
-      tooBig: "الملف كبير جداً لهذه النسخة التجريبية (الحد 25 ميغابايت).", libFail: "تعذر تحميل أداة قراءة هذا النوع من الملفات.",
-      quota: "امتلأت مساحة التخزين. احذف بعض الوثائق ثم أعد المحاولة.", saveFail: "تعذر حفظ الوثيقة.",
+      tooBig: "الملف كبير جداً (الحد 50 ميغابايت).", libFail: "تعذر تحميل أداة قراءة هذا النوع من الملفات. تحقق من الإنترنت.",
+      quota: "امتلأت مساحة التخزين في هذا المتصفح. احذف بعض الوثائق ثم أعد المحاولة.", saveFail: "تعذر حفظ الوثيقة.",
       del: "حذف", delAsk: "حذف هذه الوثيقة؟", yes: "نعم، احذف", no: "لا",
-      loadingDocs: "جارٍ تحميل الوثائق…", loadFailed: "تعذر تحميل بعض المقاطع", retry: "إعادة المحاولة", memoryMode: "الوثائق مؤقتة: ستختفي عند إغلاق الصفحة.",
+      loadingDocs: "جارٍ تحميل الوثائق…", loadFailed: "تعذر تحميل بعض المقاطع", retry: "إعادة المحاولة",
+      memoryMode: "تعذر استعمال التخزين في هذا المتصفح: الوثائق مؤقتة وستختفي عند إغلاق الصفحة.",
       emptyTitle: "اسأل عن أي شيء في وثائق البنك",
       emptyText: "يجيب المساعد من الوثائق المتوفرة فقط، ويذكر المصدر ورقم الصفحة لكل معلومة.",
-      noDocsTitle: "لا توجد وثائق بعد", noDocsEditor: "ارفع ملفات البنك من قائمة المصادر لتبدأ.", noDocsViewer: "لم يُضف صاحب الصفحة أي وثيقة بعد.",
+      noDocsTitle: "لا توجد وثائق بعد", noDocsEditor: "ارفع ملفات البنك من قائمة المصادر، أو جرّب أولاً بالوثائق التجريبية.", noDocsViewer: "",
+      addExamples: "إضافة الوثائق التجريبية",
       ex: ["ما هي المدة القصوى للقرض العقاري ونسبة فائدته؟", "ما هي الوثائق المطلوبة لملف القرض العقاري؟", "Quel est le taux du crédit à la consommation ?"],
       placeholder: "اكتب سؤالك هنا…", send: "إرسال", stop: "إيقاف",
       disclaimer: "الإجابات مستخرجة آلياً من الوثائق — تحقق دائماً من المصدر قبل اتخاذ أي قرار.",
-      stSearch: "جارٍ البحث في الوثائق", stThink: "Claude يقرأ المصادر", stWrite: "جارٍ كتابة الإجابة",
+      stSearch: "جارٍ البحث في الوثائق", stThink: "OpenAI يقرأ المصادر", stWrite: "جارٍ كتابة الإجابة",
       cited: "المصادر", others: (n) => `مقاطع أخرى تمت مراجعتها (${n})`, viewFull: "عرض النص كاملاً",
       page: "ص", sheet: "ورقة", copy: "نسخ", copied: "تم النسخ",
       notFound: "لم أجد في الوثائق المتوفرة معلومات تجيب عن هذا السؤال.",
       noSel: "اختر مصدراً واحداً على الأقل من قائمة المصادر.",
-      resultsOnly: "لا يمكن استدعاء Claude في هذا العرض، وهذه أقرب المقاطع لسؤالك:",
-      errNotGranted: "لم يُسمح لهذه الصفحة باستخدام Claude، لذلك تظهر المقاطع فقط.",
-      errRate: "تم تجاوز عدد الطلبات المسموح. انتظر قليلاً ثم أعد المحاولة.",
-      errSession: "انتهت جلستك في Claude. سجّل الدخول من جديد.",
-      errRefused: "رفض Claude هذا السؤال. جرّب صياغة أخرى.",
-      errEmpty: "لم يُرجع Claude إجابة. أعد صياغة السؤال.",
-      errTooLarge: "السؤال مع المصادر أطول من المسموح. اختر مصادر أقل.",
+      resultsOnly: "هذه أقرب المقاطع لسؤالك. أضف مفتاح OpenAI من الإعدادات لتحصل على إجابة مكتوبة.",
+      errKey: "مفتاح OpenAI غير صحيح أو أُلغي. صحّحه من الإعدادات.",
+      errQuota: "لا يوجد رصيد كافٍ في حساب OpenAI. أضف رصيداً من موقع OpenAI ثم أعد المحاولة.",
+      errRate: "طلبات كثيرة في وقت قصير. انتظر قليلاً ثم أعد المحاولة.",
+      errModel: "النموذج المختار غير متاح لحسابك. اختر نموذجاً آخر من الإعدادات.",
+      errNetwork: "تعذر الاتصال بـ OpenAI. تحقق من اتصالك بالإنترنت ثم أعد المحاولة.",
+      errRefused: "أوقف OpenAI الإجابة بسبب سياسة المحتوى. جرّب صياغة أخرى.",
+      errEmpty: "لم يُرجع النموذج إجابة. أعد صياغة السؤال.",
+      errTooLarge: "السؤال مع المصادر أطول مما يقبله النموذج. اختر مصادر أقل أو نموذجاً آخر.",
+      errApi: (m) => `رد OpenAI برسالة خطأ: ${m}`,
       errGeneric: "انقطع الاتصال أثناء الإجابة. أعد المحاولة.",
       stopped: "تم الإيقاف.", truncated: "الإجابة طويلة وتوقفت قبل نهايتها.",
+      settings: "الإعدادات", apiKey: "مفتاح OpenAI", model: "النموذج", modelHint: "اضغط «حفظ واختبار» لعرض النماذج المتاحة لحسابك.",
+      semantic: "بحث دلالي: يفهم المعنى ويربط الأسئلة العربية بالوثائق الفرنسية (تكلفة إضافية صغيرة)",
+      saveTest: "حفظ واختبار", removeKey: "حذف المفتاح", show: "إظهار", hide: "إخفاء",
+      keyNote: "لا يُرسل المفتاح إلا إلى OpenAI. يبقى في هذه النافذة فقط ويُطلب منك من جديد عند فتح الملف مرة أخرى، إلا إذا اخترت تذكّره.",
+      remember: "تذكّر المفتاح على هذا الجهاز",
+      securityNote: "تنبيه: في Chrome يستطيع أي ملف HTML آخر تفتحه من هذا الجهاز قراءة الوثائق المحفوظة هنا، والمفتاح إن اخترت تذكّره. لا تفتح في هذا المتصفح ملفات HTML تصلك عبر البريد، وأنشئ في OpenAI مفتاحاً خاصاً بهذا التطبيق بحد إنفاق شهري منخفض.",
+      keyInvalid: "المفتاح يحتوي على رموز غير صالحة. انسخه من جديد من موقع OpenAI.",
+      testing: "جارٍ الاختبار…", connected: (n) => `الاتصال ناجح ✓ — ${n} نموذجاً متاحاً لحسابك`,
+      modelSwitched: (m) => `النموذج السابق غير متاح، فاخترت ${m}.`, keyRemoved: "تم حذف المفتاح.",
+      needKeyTitle: "لم تضف مفتاح OpenAI بعد", addKey: "إضافة المفتاح", keyMissing: "اكتب المفتاح أولاً.",
     },
     fr: {
       dir: "ltr", other: "ar", otherLabel: "ع",
-      appName: "Assistant documentaire bancaire", demo: "Version d'essai",
-      notice: "Version d'essai dans Claude : les documents sont enregistrés dans cette page et leurs extraits sont envoyés à Claude à chaque question. N'y mettez pas de vrais documents confidentiels : la version destinée à la banque fonctionne sur ses serveurs internes.",
+      appName: "Assistant documentaire bancaire", demo: "Sur cet appareil",
+      notice: "Les documents et la clé OpenAI restent dans ce navigateur. À chaque question, les extraits concernés sont envoyés à OpenAI : vérifiez que la politique de la banque le permet.",
       fullApp: "Version complète sur GitHub",
       newChat: "Nouvelle discussion", sources: "Sources", close: "Fermer",
       searchSources: "Rechercher une source…", selectAll: "Tout sélectionner", selectNone: "Tout désélectionner",
@@ -53,36 +69,59 @@
       pages: (n) => `${n} pages`, sheets: (n) => `${n} feuilles`, chunks: (n) => `${n} extraits`,
       addDocs: "Ajouter des documents", drop: "Glissez vos fichiers ici ou cliquez pour choisir", dropHint: "PDF, Word, Excel, CSV, texte",
       category: "Catégorie (facultatif)", categoryPh: "Ex. : Crédits, Cartes",
-      reading: "Lecture…", saving: "Enregistrement…", done: "Ajouté", failed: "Lecture impossible",
+      reading: "Lecture…", saving: "Enregistrement…", embedding: "Indexation sémantique…", done: "Ajouté", failed: "Lecture impossible",
+      embedFailed: "Ajouté ; l'indexation sémantique sera terminée plus tard",
       scanned: "Ce fichier semble scanné (images) et ne contient pas de texte.", unsupported: "Type de fichier non pris en charge.", noText: "Aucun texte trouvé dans le fichier.",
-      tooBig: "Fichier trop volumineux pour cette version d'essai (25 Mo max).", libFail: "Impossible de charger l'outil de lecture pour ce type de fichier.",
-      quota: "L'espace de stockage est plein. Supprimez des documents puis réessayez.", saveFail: "Impossible d'enregistrer le document.",
+      tooBig: "Fichier trop volumineux (50 Mo max).", libFail: "Impossible de charger l'outil de lecture pour ce type de fichier. Vérifiez la connexion.",
+      quota: "Le stockage de ce navigateur est plein. Supprimez des documents puis réessayez.", saveFail: "Impossible d'enregistrer le document.",
       del: "Supprimer", delAsk: "Supprimer ce document ?", yes: "Oui, supprimer", no: "Non",
-      loadingDocs: "Chargement des documents…", loadFailed: "Certains extraits n'ont pas pu être chargés", retry: "Réessayer", memoryMode: "Documents temporaires : ils disparaîtront à la fermeture de la page.",
+      loadingDocs: "Chargement des documents…", loadFailed: "Certains extraits n'ont pas pu être chargés", retry: "Réessayer",
+      memoryMode: "Le stockage de ce navigateur est indisponible : les documents disparaîtront à la fermeture de la page.",
       emptyTitle: "Posez vos questions sur les documents de la banque",
       emptyText: "L'assistant répond uniquement à partir des documents disponibles, en citant la source et la page de chaque information.",
-      noDocsTitle: "Aucun document pour l'instant", noDocsEditor: "Ajoutez les documents de la banque depuis la liste des sources pour commencer.", noDocsViewer: "Le propriétaire de la page n'a encore ajouté aucun document.",
+      noDocsTitle: "Aucun document pour l'instant", noDocsEditor: "Ajoutez les documents de la banque depuis la liste des sources, ou essayez d'abord avec les documents d'exemple.", noDocsViewer: "",
+      addExamples: "Ajouter les documents d'exemple",
       ex: ["Quelle est la durée maximale du crédit à la consommation ?", "Quel est le plafond de retrait de la carte CIB Gold ?", "ما هي نسبة الفائدة على القرض العقاري؟"],
       placeholder: "Écrivez votre question…", send: "Envoyer", stop: "Arrêter",
       disclaimer: "Réponses générées automatiquement à partir des documents — vérifiez toujours la source avant toute décision.",
-      stSearch: "Recherche dans les documents", stThink: "Claude lit les sources", stWrite: "Rédaction de la réponse",
+      stSearch: "Recherche dans les documents", stThink: "OpenAI lit les sources", stWrite: "Rédaction de la réponse",
       cited: "Sources", others: (n) => `Autres extraits consultés (${n})`, viewFull: "Voir le texte complet",
       page: "p.", sheet: "feuille", copy: "Copier", copied: "Copié",
       notFound: "Je n'ai trouvé aucune information répondant à cette question dans les documents disponibles.",
       noSel: "Sélectionnez au moins une source dans la liste.",
-      resultsOnly: "Claude n'est pas disponible dans cet affichage. Voici les extraits les plus proches de votre question :",
-      errNotGranted: "Cette page n'est pas autorisée à utiliser Claude : seuls les extraits sont affichés.",
-      errRate: "Trop de demandes. Patientez un peu puis réessayez.",
-      errSession: "Votre session Claude a expiré. Reconnectez-vous.",
-      errRefused: "Claude a refusé cette question. Essayez une autre formulation.",
-      errEmpty: "Claude n'a renvoyé aucune réponse. Reformulez la question.",
-      errTooLarge: "La question et les sources sont trop longues. Sélectionnez moins de sources.",
+      resultsOnly: "Voici les extraits les plus proches de votre question. Ajoutez une clé OpenAI dans les réglages pour obtenir une réponse rédigée.",
+      errKey: "La clé OpenAI est invalide ou révoquée. Corrigez-la dans les réglages.",
+      errQuota: "Crédit insuffisant sur le compte OpenAI. Ajoutez du crédit sur le site d'OpenAI puis réessayez.",
+      errRate: "Trop de demandes en peu de temps. Patientez un peu puis réessayez.",
+      errModel: "Le modèle choisi n'est pas disponible pour votre compte. Choisissez-en un autre dans les réglages.",
+      errNetwork: "Impossible de joindre OpenAI. Vérifiez votre connexion Internet puis réessayez.",
+      errRefused: "OpenAI a interrompu la réponse (politique de contenu). Essayez une autre formulation.",
+      errEmpty: "Le modèle n'a renvoyé aucune réponse. Reformulez la question.",
+      errTooLarge: "La question et les sources dépassent ce que le modèle accepte. Sélectionnez moins de sources ou un autre modèle.",
+      errApi: (m) => `OpenAI a renvoyé une erreur : ${m}`,
       errGeneric: "La connexion a été interrompue pendant la réponse. Réessayez.",
       stopped: "Arrêté.", truncated: "La réponse était longue et s'est arrêtée avant la fin.",
+      settings: "Réglages", apiKey: "Clé OpenAI", model: "Modèle", modelHint: "Cliquez sur « Enregistrer et tester » pour voir les modèles disponibles pour votre compte.",
+      semantic: "Recherche sémantique : comprend le sens et relie les questions en arabe aux documents en français (petit coût supplémentaire)",
+      saveTest: "Enregistrer et tester", removeKey: "Supprimer la clé", show: "Afficher", hide: "Masquer",
+      keyNote: "La clé n'est envoyée qu'à OpenAI. Elle reste dans cette fenêtre et vous sera redemandée à la prochaine ouverture du fichier, sauf si vous choisissez de la mémoriser.",
+      remember: "Mémoriser la clé sur cet appareil",
+      securityNote: "Attention : dans Chrome, tout autre fichier HTML ouvert depuis cet ordinateur peut lire les documents enregistrés ici, ainsi que la clé si vous la mémorisez. N'ouvrez pas dans ce navigateur des fichiers HTML reçus par e-mail, et créez chez OpenAI une clé dédiée à cette application avec une faible limite de dépenses mensuelle.",
+      keyInvalid: "La clé contient des caractères invalides. Copiez-la à nouveau depuis le site d'OpenAI.",
+      testing: "Test en cours…", connected: (n) => `Connexion réussie ✓ — ${n} modèles disponibles pour votre compte`,
+      modelSwitched: (m) => `Le modèle précédent n'est pas disponible : ${m} a été choisi.`, keyRemoved: "Clé supprimée.",
+      needKeyTitle: "Aucune clé OpenAI enregistrée", addKey: "Ajouter la clé", keyMissing: "Saisissez d'abord la clé.",
     },
   };
 
-  const LS_LANG = "bankdemo.lang", LS_OFF = "bankdemo.deselected", LS_NOTICE = "bankdemo.noticeClosed";
+  const LS_LANG = "bankai.lang", LS_OFF = "bankai.deselected", LS_NOTICE = "bankai.noticeClosed";
+  const LS_KEY = "bankai.openaiKey", LS_MODEL = "bankai.model", LS_SEM = "bankai.semantic";
+  const ssGet = (k) => { try { return sessionStorage.getItem(k) || ""; } catch (e) { return ""; } };
+  const ssSet = (k, v) => { try { if (v) sessionStorage.setItem(k, v); else sessionStorage.removeItem(k); } catch (e) { /* unavailable */ } };
+  const lsDel = (k) => { try { localStorage.removeItem(k); } catch (e) { /* unavailable */ } };
+  // Keys pasted from chat apps often carry invisible direction marks, which fetch() cannot send in a header.
+  const cleanKey = (v) => String(v || "").replace(/[\s\u00A0\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/g, "");
+  const validKey = (v) => /^[\x21-\x7E]+$/.test(v);
   const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } };
   const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* storage unavailable */ } };
 
@@ -90,15 +129,23 @@
   const T = () => STR[lang];
 
   // ------------------------------------------------------------------ state
-  const TOP_K = 8, CHUNK_SIZE = 1200, CHUNK_OVERLAP = 200, MAX_FILE = 25 * 1024 * 1024;
+  const TOP_K = 8, CHUNK_SIZE = 1200, CHUNK_OVERLAP = 200, MAX_FILE = 50 * 1024 * 1024;
   const docs = new Map();          // id -> meta
   const chunksByDoc = new Map();   // id -> [{text,p0,p1,h}]
-  const loadedVer = new Map();     // id -> ver whose chunks are loaded
+  const vecsByDoc = new Map();     // id -> {dim, data: Float32Array} (normalised embeddings, one row per chunk)
+  const settings = {
+    key: cleanKey(ssGet(LS_KEY) || lsGet(LS_KEY, "")),
+    remember: Boolean(cleanKey(lsGet(LS_KEY, ""))),
+    model: lsGet(LS_MODEL, "gpt-4o-mini"),
+    semantic: lsGet(LS_SEM, "1") === "1",
+  };
+  const aiReady = () => Boolean(settings.key);
   let index = new Core.Index([]);
   let deselected = new Set(JSON.parse(lsGet(LS_OFF, "[]") || "[]"));
   let history = [];
   let busy = false, controller = null;
-  let canEdit = false, sample = null, db = null, storeMode = "loading", declined = false;
+  const canEdit = true;
+  let storeMode = "loading";
 
   const $ = (sel) => document.querySelector(sel);
   const esc = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
@@ -127,15 +174,21 @@
   $("#notice-x").addEventListener("click", () => { $("#notice").hidden = true; lsSet(LS_NOTICE, "1"); });
 
   // ------------------------------------------------------------------ index
-  let rebuildTimer = null, indexDirty = false;
+  let rebuildTimer = null, indexDirty = false, entryVecs = [];
   function rebuildIndex() {
     clearTimeout(rebuildTimer);
     indexDirty = false;
     const entries = [];
+    entryVecs = [];
     for (const [id, chunks] of chunksByDoc) {
       const meta = docs.get(id);
       if (!meta) continue;
-      chunks.forEach((c, i) => entries.push({ key: `${id}:${i}`, docId: id, title: meta.title, ext: meta.ext, chunk: c }));
+      const v = vecsByDoc.get(id);
+      const usable = v && v.data && v.data.length === chunks.length * v.dim;
+      chunks.forEach((c, i) => {
+        entries.push({ key: `${id}:${i}`, docId: id, title: meta.title, ext: meta.ext, chunk: c });
+        entryVecs.push(usable ? { data: v.data, offset: i * v.dim, dim: v.dim } : null);
+      });
     }
     index = new Core.Index(entries);
   }
@@ -145,155 +198,306 @@
     rebuildTimer = setTimeout(rebuildIndex, 30);
   }
 
-  // ------------------------------------------------------------------ storage
-  const PART_BYTES = 170000;
-  const enc = new TextEncoder();
-
-  function splitParts(chunks) {
-    const parts = [];
-    let cur = [], size = 0;
-    for (const c of chunks) {
-      const n = enc.encode(JSON.stringify(c)).length + 1;
-      if (cur.length && size + n > PART_BYTES) { parts.push(cur); cur = []; size = 0; }
-      cur.push(c);
-      size += n;
-    }
-    if (cur.length) parts.push(cur);
-    return parts;
-  }
-
-  const loading = new Map();      // id -> {ver, promise}
+  // ------------------------------------------------------------------ storage (IndexedDB, this browser only)
+  let idb = null;
+  const loading = new Map();       // kept for the shared asking code: nothing loads in the background here
   const loadFailed = new Set();
-  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  function retryFailed() { renderSources(); }
 
-  async function readPart(id, n) {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        const snap = await db.doc(`chunks/${id}_${n}`).get();
-        return snap.exists ? snap.data() : null;
-      } catch (e) {
-        if (attempt === 0) await wait(300 + Math.random() * 1200); // documented transient errors: retry once
-        else throw e;
-      }
-    }
-    return null;
-  }
-
-  function fetchChunks(id, meta) {
-    const want = meta.ver || 1;
-    if (!db || loadedVer.get(id) === want) return Promise.resolve();
-    const running = loading.get(id);
-    if (running && running.ver === want) return running.promise;
-    const promise = (async () => {
-      const items = [];
-      let complete = true;
-      for (let n = 0; n < (meta.parts || 0); n++) {      // one part at a time keeps within the call budget
-        let part = null;
-        try { part = await readPart(id, n); } catch (e) { complete = false; break; }
-        if (!part || !Array.isArray(part.items)) { complete = false; break; }
-        items.push(...part.items);
-      }
-      if (!docs.has(id) || (docs.get(id).ver || 1) !== want) return;
-      if (!complete) {
-        loadFailed.add(id);
-        renderSources();
-        return;
-      }
-      loadFailed.delete(id);
-      chunksByDoc.set(id, items);
-      loadedVer.set(id, want);
-      scheduleRebuild();
-      renderSources();
-    })().finally(() => { if (loading.get(id) && loading.get(id).promise === promise) loading.delete(id); });
-    loading.set(id, { ver: want, promise });
-    return promise;
-  }
-
-  function retryFailed() {
-    for (const id of [...loadFailed]) { loadFailed.delete(id); if (docs.has(id)) fetchChunks(id, docs.get(id)); }
-    renderSources();
-  }
-
-  function subscribeDocs() {
-    db.collection("docs").onSnapshot((snap) => {
-      const seen = new Set();
-      for (const d of snap.docs) {
-        const meta = d.data();
-        if (!meta || !meta.title) continue;
-        seen.add(d.id);
-        docs.set(d.id, { id: d.id, ...meta });
-        fetchChunks(d.id, docs.get(d.id));
-      }
-      for (const id of [...docs.keys()]) {
-        if (!seen.has(id)) { docs.delete(id); chunksByDoc.delete(id); loadedVer.delete(id); loadFailed.delete(id); }
-      }
-      storeMode = "db";
-      scheduleRebuild();
-      renderSources();
-      updateEmpty();
-    }, () => {
-      storeMode = "memory";
-      renderSources();
-      updateEmpty();
+  function openStore() {
+    return new Promise((resolve) => {
+      let req;
+      try { req = indexedDB.open("bank-assistant", 1); } catch (e) { resolve(null); return; }
+      req.onupgradeneeded = () => {
+        const d = req.result;
+        if (!d.objectStoreNames.contains("docs")) d.createObjectStore("docs", { keyPath: "id" });
+        if (!d.objectStoreNames.contains("chunks")) d.createObjectStore("chunks", { keyPath: "id" });
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+      req.onblocked = () => resolve(null);
     });
   }
 
-  async function saveDoc(meta, chunks) {
-    const id = meta.id;
-    if (storeMode !== "db") {
-      docs.set(id, meta);
-      chunksByDoc.set(id, chunks);
-      loadedVer.set(id, meta.ver);
-      scheduleRebuild();
-      return;
+  function runTx(stores, fn) {
+    return new Promise((resolve, reject) => {
+      let t;
+      try { t = idb.transaction(stores, "readwrite"); } catch (e) { reject(e); return; }
+      fn(t);
+      t.oncomplete = () => resolve();
+      t.onerror = () => reject(t.error);
+      t.onabort = () => reject(t.error || new Error("abort"));
+    });
+  }
+
+  function getAll(store) {
+    return new Promise((resolve, reject) => {
+      const r = idb.transaction(store).objectStore(store).getAll();
+      r.onsuccess = () => resolve(r.result || []);
+      r.onerror = () => reject(r.error);
+    });
+  }
+
+  async function loadAll() {
+    const [metas, recs] = await Promise.all([getAll("docs"), getAll("chunks")]);
+    const byId = new Map(recs.map((r) => [r.id, r]));
+    for (const meta of metas) {
+      const rec = byId.get(meta.id);
+      if (!rec || !Array.isArray(rec.items)) continue;   // an interrupted save leaves no usable document
+      docs.set(meta.id, meta);
+      chunksByDoc.set(meta.id, rec.items);
+      if (rec.vecs && rec.dim) vecsByDoc.set(meta.id, { dim: rec.dim, data: rec.vecs });
     }
-    const parts = splitParts(chunks);
-    for (let n = 0; n < parts.length; n++) {
-      await db.doc(`chunks/${id}_${n}`).set({ doc: id, n, items: parts[n] });
+  }
+
+  async function saveDoc(meta, chunks, vecs) {
+    if (idb) {
+      await runTx(["docs", "chunks"], (t) => {
+        t.objectStore("chunks").put({ id: meta.id, items: chunks, dim: vecs ? vecs.dim : 0, vecs: vecs ? vecs.data : null });
+        t.objectStore("docs").put(meta);
+      });
     }
-    const body = { ...meta, parts: parts.length };
-    delete body.id;
-    chunksByDoc.set(id, chunks);
-    loadedVer.set(id, meta.ver);
-    await db.doc(`docs/${id}`).set(body);
+    docs.set(meta.id, meta);
+    chunksByDoc.set(meta.id, chunks);
+    if (vecs) vecsByDoc.set(meta.id, vecs); else vecsByDoc.delete(meta.id);
+    scheduleRebuild();
   }
 
   async function deleteDoc(id) {
-    const meta = docs.get(id);
     docs.delete(id);
     chunksByDoc.delete(id);
-    loadedVer.delete(id);
+    vecsByDoc.delete(id);
     deselected.delete(id);
+    saveDeselected();
     scheduleRebuild();
     renderSources();
     updateEmpty();
-    if (storeMode !== "db" || !meta) return;
-    await db.doc(`docs/${id}`).delete();
-    for (let n = 0; n < (meta.parts || 0); n++) await db.doc(`chunks/${id}_${n}`).delete().catch(() => {});
+    if (idb) await runTx(["docs", "chunks"], (t) => { t.objectStore("docs").delete(id); t.objectStore("chunks").delete(id); });
+  }
+
+  // ------------------------------------------------------------------ OpenAI
+  const OPENAI = "https://api.openai.com/v1";
+  const EMBED_MODEL = "text-embedding-3-small";
+  const PREFERRED_MODELS = ["gpt-4.1-mini", "gpt-4o-mini", "gpt-4.1", "gpt-4o"];
+  const NOT_CHAT = /(audio|realtime|tts|transcribe|image|embedding|search|instruct|codex|moderation|dall-e|whisper|computer|deep-research|-pro\b)/i;
+
+  function aiError(code, message, text, extra) { return { code, message: message || code, text, ...(extra || {}) }; }
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const noStream = new Set();   // models this account may not stream (unverified organisation)
+
+  async function openaiFetch(path, body, signal) {
+    if (!validKey(settings.key)) throw aiError("key");
+    let res;
+    try {
+      const headers = { Authorization: `Bearer ${settings.key}` };
+      if (body) headers["Content-Type"] = "application/json";
+      res = await fetch(OPENAI + path, { method: body ? "POST" : "GET", headers, body: body ? JSON.stringify(body) : undefined, signal });
+    } catch (e) {
+      if (e && e.name === "AbortError") throw aiError("cancelled");
+      throw aiError("network", String((e && e.message) || e));
+    }
+    if (!res.ok) {
+      let info = {};
+      try { info = (await res.json()).error || {}; } catch (e) { /* not JSON */ }
+      const msg = info.message || `HTTP ${res.status}`;
+      let code = "api";
+      if (res.status === 401 || res.status === 403 && /key/i.test(msg)) code = "key";
+      else if (res.status === 429) code = info.code === "insufficient_quota" || info.type === "insufficient_quota" ? "quota" : "rate";
+      else if (res.status === 404 || info.code === "model_not_found") code = "model";
+      else if (info.code === "context_length_exceeded") code = "too_large";
+      throw aiError(code, msg, undefined, { status: res.status, param: info.param, retryAfter: Number(res.headers.get("retry-after")) || 0 });
+    }
+    return res;
+  }
+
+  async function chatOnce(messages, signal) {
+    const res = await openaiFetch("/chat/completions", { model: settings.model, messages }, signal);
+    let j = {};
+    try { j = await res.json(); } catch (e) { throw aiError("api", "bad response"); }
+    const choice = (j.choices && j.choices[0]) || {};
+    return { text: (choice.message && choice.message.content) || "", finish: choice.finish_reason || null };
+  }
+
+  async function chatStream(messages, onText, signal) {
+    let res;
+    if (!noStream.has(settings.model)) {
+      try {
+        res = await openaiFetch("/chat/completions", { model: settings.model, messages, stream: true }, signal);
+      } catch (e) {
+        if (!(e && e.status === 400 && e.param === "stream")) throw e;
+        noStream.add(settings.model);   // e.g. gpt-5 / o3 without organisation verification
+      }
+    }
+    if (!res) {
+      const once = await chatOnce(messages, signal);
+      if (once.text) onText(once.text);
+      return { text: once.text, truncated: once.finish === "length", filtered: once.finish === "content_filter" };
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "", text = "", finish = null;
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let nl;
+        while ((nl = buf.indexOf("\n")) >= 0) {
+          const line = buf.slice(0, nl).trim();
+          buf = buf.slice(nl + 1);
+          if (!line.startsWith("data:")) continue;
+          const data = line.slice(5).trim();
+          if (!data || data === "[DONE]") continue;
+          let j;
+          try { j = JSON.parse(data); } catch (e) { continue; }
+          if (j.error) throw aiError("api", j.error.message || "error", text);
+          const choice = j.choices && j.choices[0];
+          if (!choice) continue;
+          const piece = choice.delta && choice.delta.content;
+          if (piece) { text += piece; onText(text); }
+          if (choice.finish_reason) finish = choice.finish_reason;
+        }
+      }
+    } catch (e) {
+      if (e && e.name === "AbortError") throw aiError("cancelled", "cancelled", text);
+      if (e && e.code) throw { ...e, text: e.text ?? text };
+      throw aiError("network", String(e), text);
+    }
+    return { text, truncated: finish === "length", filtered: finish === "content_filter" };
+  }
+
+  async function chatJSON(prompt, signal) {
+    const t = (await chatOnce([{ role: "user", content: prompt }], signal)).text;
+    const a = t.indexOf("{"), b = t.lastIndexOf("}");
+    if (a < 0 || b <= a) return null;
+    try { return JSON.parse(t.slice(a, b + 1)); } catch (e) { return null; }
+  }
+
+  async function withRetry(fn) {
+    for (let attempt = 0; ; attempt++) {
+      try { return await fn(); } catch (e) {
+        const transient = e && (e.code === "rate" || e.code === "network" || (e.status || 0) >= 500);
+        if (!transient || attempt >= 3) throw e;
+        await wait(e.retryAfter ? Math.min(e.retryAfter, 30) * 1000 : 1000 * 2 ** attempt);
+      }
+    }
+  }
+
+  async function embed(texts, signal) {
+    const out = [];
+    for (let i = 0; i < texts.length; i += 64) {
+      const res = await withRetry(() => openaiFetch("/embeddings", { model: EMBED_MODEL, input: texts.slice(i, i + 64) }, signal));
+      const j = await res.json();
+      const rows = (j.data || []).slice().sort((x, y) => x.index - y.index);
+      if (rows.length !== Math.min(64, texts.length - i)) throw aiError("api", "embeddings: wrong count");
+      for (const r of rows) out.push(r.embedding);
+    }
+    return out;
+  }
+
+  function packVectors(list) {
+    if (!list.length) return null;
+    const dim = list[0].length;
+    const data = new Float32Array(list.length * dim);
+    list.forEach((v, i) => {
+      let n = 0;
+      for (let k = 0; k < dim; k++) n += v[k] * v[k];
+      n = Math.sqrt(n) || 1;
+      for (let k = 0; k < dim; k++) data[i * dim + k] = v[k] / n;
+    });
+    return { dim, data };
+  }
+
+  const hasVectors = (id) => {
+    const v = vecsByDoc.get(id), c = chunksByDoc.get(id);
+    return Boolean(v && c && v.data && v.data.length === c.length * v.dim);
+  };
+  let backfilling = false;
+  async function backfillVectors() {
+    if (backfilling || !aiReady() || !settings.semantic) return;
+    backfilling = true;
+    try {
+      for (const [id, chunks] of [...chunksByDoc]) {
+        const meta = docs.get(id);
+        if (!meta || hasVectors(id)) continue;
+        let vecs;
+        try { vecs = packVectors(await embed(chunks.map((c) => `${meta.title}\n${c.h || ""}\n${c.text}`.trim()))); }
+        catch (e) { break; }                     // no credit / key problem: try again on the next question
+        if (!docs.has(id) || chunksByDoc.get(id) !== chunks || !vecs) continue;   // deleted or replaced meanwhile
+        if (idb) {
+          try { await runTx(["chunks"], (t) => t.objectStore("chunks").put({ id, items: chunks, dim: vecs.dim, vecs: vecs.data })); }
+          catch (e) { break; }
+        }
+        vecsByDoc.set(id, vecs);
+        scheduleRebuild();
+      }
+    } finally { backfilling = false; }
+  }
+
+  function denseSearch(qvec, limit, allowed) {
+    let n = 0;
+    for (const x of qvec) n += x * x;
+    n = Math.sqrt(n) || 1;
+    const scored = [];
+    entryVecs.forEach((v, idx) => {
+      if (!v || v.dim !== qvec.length) return;
+      if (allowed && !allowed.has(index.entries[idx].docId)) return;
+      let s = 0;
+      for (let k = 0; k < v.dim; k++) s += v.data[v.offset + k] * qvec[k];
+      scored.push([idx, s / n]);
+    });
+    return scored.sort((a, b) => b[1] - a[1]).slice(0, limit);
+  }
+
+  function hybridSearch(queries, qvec, allowed) {
+    const fused = new Map();
+    const pool = Math.max(TOP_K * 4, 30);
+    const add = (ranking) => ranking.forEach(([idx], rank) => fused.set(idx, (fused.get(idx) || 0) + 1 / (60 + rank + 1)));
+    for (const q of queries) add(index.search(q, pool, allowed));
+    if (qvec) add(denseSearch(qvec, pool, allowed));
+    return [...fused.entries()].sort((a, b) => b[1] - a[1]).slice(0, TOP_K).map(([idx]) => index.entries[idx]);
+  }
+
+  function chatModels(ids) {
+    return ids.filter((id) => (/^gpt-/.test(id) || /^o\d/.test(id) || /^chatgpt-/.test(id)) && !NOT_CHAT.test(id)).sort();
   }
 
   // ------------------------------------------------------------------ libraries (loaded on demand)
-  const LIBS = {
-    pdf: ["https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js",
-      "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js"],
-    docx: ["https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js"],
-    xlsx: ["https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"],
+  // Reader libraries are pinned with Subresource Integrity: a tampered copy on a CDN is refused by the
+  // browser, so it can never run next to the API key kept in this page. unpkg serves the same files.
+  const LIB_FILES = {
+    pdf: [["pdfjs-dist@3.11.174/build/pdf.min.js", "sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e"],
+      ["pdfjs-dist@3.11.174/build/pdf.worker.min.js", "sha384-SnzOobpRMLXZ52iJvZm/C0fYw0OQemTXzTjIsdsfMcrCtCEe9qgzxTd3RSklO5x2"]],
+    docx: [["mammoth@1.6.0/mammoth.browser.min.js", "sha384-nFoSjZIoH3CCp8W639jJyQkuPHinJ2NHe7on1xvlUA7SuGfJAfvMldrsoAVm6ECz"]],
+    xlsx: [["xlsx@0.18.5/dist/xlsx.full.min.js", "sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw"]],
   };
+  const CDNS = ["https://cdn.jsdelivr.net/npm/", "https://unpkg.com/"];
   const scriptCache = new Map();
-  function loadScript(src) {
-    if (!scriptCache.has(src)) {
-      scriptCache.set(src, new Promise((resolve, reject) => {
-        const s = document.createElement("script");
-        s.src = src;
-        s.onload = resolve;
-        s.onerror = () => { scriptCache.delete(src); reject(new Error("lib")); };
-        document.head.appendChild(s);
-      }));
+  function injectScript(src, integrity) {
+    return new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = src;
+      s.integrity = integrity;
+      s.crossOrigin = "anonymous";
+      s.onload = resolve;
+      s.onerror = () => { s.remove(); reject(new Error("lib")); };
+      document.head.appendChild(s);
+    });
+  }
+  function loadScript(file, integrity) {
+    if (!scriptCache.has(file)) {
+      scriptCache.set(file, (async () => {
+        for (const cdn of CDNS) {
+          try { await injectScript(cdn + file, integrity); return; } catch (e) { /* try the next CDN */ }
+        }
+        scriptCache.delete(file);
+        throw new Error("lib");
+      })());
     }
-    return scriptCache.get(src);
+    return scriptCache.get(file);
   }
   async function loadLib(kind) {
-    for (const src of LIBS[kind]) await loadScript(src); // in order: pdf.worker after pdf
+    for (const [file, integrity] of LIB_FILES[kind]) await loadScript(file, integrity); // in order: pdf.worker after pdf
   }
 
   // ------------------------------------------------------------------ parsers
@@ -465,25 +669,32 @@
       }
       const chunks = Core.chunkUnits(parsed.units, CHUNK_SIZE, CHUNK_OVERLAP);
       if (!chunks.length) { set(parsed.warning === "scanned" ? T().scanned : T().noText, "bad"); continue; }
-      set(T().saving, "busy");
       const id = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now()).replace(/-/g, "").slice(0, 20);
+      const title = file.name.replace(/\.[^.]+$/, "").replace(/_/g, " ").trim() || file.name;
+      let vecs = null, embedNote = "";
+      if (aiReady() && settings.semantic) {
+        set(T().embedding, "busy");
+        try { vecs = packVectors(await embed(chunks.map((c) => `${title}\n${c.h || ""}\n${c.text}`.trim()))); }
+        catch (e) { vecs = null; embedNote = T().embedFailed; }
+      }
+      set(T().saving, "busy");
       const meta = {
-        id, title: file.name.replace(/\.[^.]+$/, "").replace(/_/g, " ").trim() || file.name, filename: file.name,
+        id, title, filename: file.name,
         ext: parsed.ext, category, pages: parsed.pages, chunks: chunks.length, size: file.size,
         created: new Date().toISOString(), ver: Date.now(), sample: false, warning: parsed.warning,
       };
       try {
-        await saveDoc(meta, chunks);
-        if (storeMode !== "db") renderSources();
-        set(T().done, "ok");
-        setTimeout(clearDoneRows, 2500);
+        await saveDoc(meta, chunks, vecs);
+        renderSources();
+        if (embedNote) { set(embedNote, "warn"); setTimeout(clearDoneRows, 8000); }
+        else { set(T().done, "ok"); setTimeout(clearDoneRows, 2500); }
       } catch (e) {
-        set(e && e.code === "quota_exceeded" ? T().quota : T().saveFail, "bad");
+        set(e && e.name === "QuotaExceededError" ? T().quota : T().saveFail, "bad");
       }
       updateEmpty();
     }
   }
-  function clearDoneRows() { upList.querySelectorAll('.up-row[data-state="ok"]').forEach((r) => r.remove()); }
+  function clearDoneRows() { upList.querySelectorAll('.up-row[data-state="ok"], .up-row[data-state="warn"]').forEach((r) => r.remove()); }
 
   const dropzone = $("#dropzone"), fileInput = $("#file-input");
   fileInput.addEventListener("change", () => { const f = [...fileInput.files]; fileInput.value = ""; addFiles(f); });
@@ -518,7 +729,7 @@
 
   function renderSources() {
     const s = T();
-    $("#up-panel").hidden = !canEdit;
+    $("#up-panel").hidden = false;
     $("#memory-note").hidden = storeMode !== "memory";
     if (storeMode === "loading") { list.innerHTML = `<p class="muted pad">${esc(s.loadingDocs)}</p>`; $("#sel-count").textContent = ""; return; }
     const q = Core.normalize($("#source-filter").value.trim());
@@ -760,7 +971,7 @@
   }
   $("#reader-close").addEventListener("click", () => { $("#reader").hidden = true; });
   $("#reader").addEventListener("click", (e) => { if (e.target.id === "reader") $("#reader").hidden = true; });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") { $("#reader").hidden = true; setPanel(false); } });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") { $("#reader").hidden = true; $("#settings").hidden = true; setPanel(false); } });
 
   // ------------------------------------------------------------------ asking
   const RULES = `You are the document assistant of a bank. Bank employees ask questions and you answer ONLY from the numbered excerpts of the bank's internal documents provided with each question.
@@ -780,7 +991,7 @@ Rules:
   async function planQueries(question) {
     const queries = [question];
     const lastUser = [...history].reverse().find((m) => m.role === "user");
-    if (!sample) { if (lastUser) queries.push(`${lastUser.content}\n${question}`); return queries; }
+    if (!aiReady()) { if (lastUser) queries.push(`${lastUser.content}\n${question}`); return queries; }
     const other = Core.detectLang(question) === "ar" ? "French" : "Arabic";
     const convo = history.slice(-6).map((m) => `${m.role === "user" ? "Employee" : "Assistant"}: ${stripCites(m.content).slice(0, 600)}`).join("\n");
     const prompt = `You prepare search queries for a keyword search engine over a bank's internal documents, written in Arabic and/or French.
@@ -788,13 +999,12 @@ ${convo ? `Conversation so far:\n${convo}\n` : ""}Latest question: ${question}
 
 Reply with only a JSON object {"queries": [q1, q2, q3]}: q1 = the latest question rewritten as a complete standalone question in its own language (resolve references such as "it", "this loan", "هذا", "ce produit" from the conversation); q2 = q1 translated into ${other}; q3 = important keywords and banking synonyms likely to appear in the documents, in both languages.`;
     try {
-      const out = await sample.json(prompt, { modelTier: "quick", signal: controller ? controller.signal : undefined });
+      const out = await chatJSON(prompt, controller ? controller.signal : undefined);
       for (const q of (out && Array.isArray(out.queries) ? out.queries : [])) {
         if (typeof q === "string" && q.trim().length > 2 && !queries.includes(q.trim())) queries.push(q.trim().slice(0, 400));
       }
     } catch (e) {
-      if (e && e.code === "cancelled") throw e;
-      if (e && (e.code === "not_granted" || e.code === "sampling_disabled")) { sample = null; declined = true; }
+      if (e && ["cancelled", "key", "quota", "model"].includes(e.code)) throw e;   // the answer would fail the same way
       if (lastUser) queries.push(`${lastUser.content}\n${question}`);
     }
     return queries.slice(0, 4);
@@ -812,8 +1022,12 @@ Reply with only a JSON object {"queries": [q1, q2, q3]}: q1 = the latest questio
     }).join("\n\n");
   }
 
-  const ERR = { not_granted: "errNotGranted", sampling_disabled: "errNotGranted", rate_limited: "errRate",
-    session_expired: "errSession", refused: "errRefused", empty_completion: "errEmpty", prompt_too_large: "errTooLarge" };
+  const ERR = { key: "errKey", quota: "errQuota", rate: "errRate", model: "errModel", network: "errNetwork",
+    too_large: "errTooLarge", empty: "errEmpty" };
+  function errorText(e) {
+    if (e && e.code === "api") return T().errApi(e.message);
+    return T()[ERR[e && e.code] || "errGeneric"];
+  }
 
   function setBusy(v) {
     busy = v;
@@ -853,47 +1067,46 @@ Reply with only a JSON object {"queries": [q1, q2, q3]}: q1 = the latest questio
       const incomplete = allowedIds.some((id) => !chunksByDoc.has(id));
       const allowed = allowedIds.length === docs.size ? null : new Set(allowedIds);
       if (indexDirty) rebuildIndex();
-      results = index.searchAll(queries, TOP_K, allowed);
+      let qvec = null;
+      backfillVectors().catch(() => {});
+      // Semantic ranking only when every searched document has vectors, so a partly indexed set cannot skew results.
+      if (aiReady() && settings.semantic && allowedIds.every(hasVectors)) {
+        try { qvec = (await embed([queries[1] || question], controller.signal))[0]; }
+        catch (e) { if (e && e.code === "cancelled") throw e; qvec = null; }
+      }
+      results = hybridSearch(queries, qvec, allowed);
       if (incomplete) { view.note.textContent = T().loadFailed; view.note.hidden = false; view.note.classList.add("bad"); }
       if (!results.length) {
         answer = T().notFound;
         ok = !incomplete;
-      } else if (!sample) {
+      } else if (!aiReady()) {
         answer = T().resultsOnly;
         view.answer.classList.add("muted");
-        if (declined) {
-          declined = false;
-          view.note.textContent = T().errNotGranted;
-          view.note.hidden = false;
-          view.note.classList.add("bad");
-        }
       } else {
         view.stage.textContent = T().stThink;
         const turns = [{ role: "user", content: RULES }];
         for (const m of history.slice(-8)) turns.push({ role: m.role, content: m.role === "assistant" ? stripCites(m.content) : m.content });
         turns.push({ role: "user", content: `Excerpts:\n\n${sourceBlock(results)}\n\nEmployee's question: ${question}` });
-        const res = await sample(turns, {
-          signal: controller.signal, cache: false, modelTier: "default",
-          onText: ({ text }) => {
-            if (!answer) view.status.hidden = true;
-            answer = text;
-            if (!pending) { pending = true; requestAnimationFrame(paint); }
-          },
-        });
+        const res = await chatStream(turns, (text) => {
+          if (!answer) view.status.hidden = true;
+          answer = text;
+          if (!pending) { pending = true; requestAnimationFrame(paint); }
+        }, controller.signal);
         answer = res.text;
+        if (!answer.trim()) throw aiError("empty");
         if (res.truncated) { view.note.textContent = T().truncated; view.note.hidden = false; }
+        if (res.filtered) { view.note.textContent = T().errRefused; view.note.hidden = false; view.note.classList.add("bad"); }
         ok = true;
       }
     } catch (e) {
       const code = e && e.code;
-      // a refused answer is withdrawn by the platform: clear what was shown
-      answer = code === "refused" ? "" : (e && typeof e.text === "string" ? e.text : answer) || "";
+      answer = (e && typeof e.text === "string" ? e.text : answer) || "";
       if (code === "cancelled") answer = (answer ? answer + "\n\n" : "") + T().stopped;
       else {
-        if (code === "not_granted" || code === "sampling_disabled") sample = null;
-        view.note.textContent = T()[ERR[code] || "errGeneric"];
+        view.note.textContent = errorText(e);
         view.note.hidden = false;
         view.note.classList.add("bad");
+        if (code === "key" || code === "model") openSettings();
       }
     } finally {
       finished = true;
@@ -901,7 +1114,7 @@ Reply with only a JSON object {"queries": [q1, q2, q3]}: q1 = the latest questio
       view.status.hidden = true;
       view.answer.classList.remove("caret");
       view.answer.innerHTML = markdown(answer, results.length);
-      renderSourcesBlock(view, results, answer, !sample || answer === T().resultsOnly);
+      renderSourcesBlock(view, results, answer, answer === T().resultsOnly);
       if (ok && answer && answer !== T().resultsOnly) {
         view.tools.hidden = false;
         view.copy.textContent = T().copy;
@@ -966,18 +1179,111 @@ Reply with only a JSON object {"queries": [q1, q2, q3]}: q1 = the latest questio
     q.focus();
   });
 
-  // ------------------------------------------------------------------ start
-  applyLang();
-  updateSend();
-  const use = (name) => (window.claude && typeof window.claude.use === "function" ? window.claude.use(name) : Promise.resolve(null));
-  (async () => {
-    const [dbNs, userNs, sampleNs] = await Promise.all([use("db"), use("user"), use("sample")]);
-    sample = sampleNs || null;
-    db = dbNs || null;
-    try { canEdit = userNs ? await userNs.canEdit() : !db; } catch (e) { canEdit = !db; }
-    if (db) subscribeDocs();
-    else { storeMode = "memory"; canEdit = true; }
+  // ------------------------------------------------------------------ settings
+  const keyInput = $("#key-input"), modelInput = $("#model-input"), semInput = $("#sem-input"), setStatus = $("#set-status");
+
+  function updateKeyBanner() { $("#key-banner").hidden = aiReady(); }
+
+  function openSettings() {
+    keyInput.value = settings.key;
+    $("#remember-input").checked = settings.remember;
+    keyInput.type = "password";
+    $("#key-toggle").textContent = T().show;
+    modelInput.value = settings.model;
+    semInput.checked = settings.semantic;
+    setStatus.textContent = "";
+    setStatus.className = "set-status";
+    $("#settings").hidden = false;
+    keyInput.focus();
+  }
+  function closeSettings() { $("#settings").hidden = true; }
+
+  $("#open-settings").addEventListener("click", openSettings);
+  $("#banner-add-key").addEventListener("click", openSettings);
+  $("#settings-close").addEventListener("click", closeSettings);
+  $("#settings").addEventListener("click", (e) => { if (e.target.id === "settings") closeSettings(); });
+  $("#key-toggle").addEventListener("click", () => {
+    const show = keyInput.type === "password";
+    keyInput.type = show ? "text" : "password";
+    $("#key-toggle").textContent = show ? T().hide : T().show;
+  });
+  $("#settings-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const key = cleanKey(keyInput.value);
+    if (!key) { setStatus.textContent = T().keyMissing; setStatus.className = "set-status bad"; return; }
+    if (!validKey(key)) { setStatus.textContent = T().keyInvalid; setStatus.className = "set-status bad"; return; }
+    keyInput.value = key;
+    settings.key = key;
+    settings.remember = $("#remember-input").checked;
+    settings.model = modelInput.value.trim() || settings.model;
+    settings.semantic = semInput.checked;
+    ssSet(LS_KEY, key);
+    if (settings.remember) lsSet(LS_KEY, key); else lsDel(LS_KEY);
+    lsSet(LS_MODEL, settings.model); lsSet(LS_SEM, settings.semantic ? "1" : "0");
+    updateKeyBanner();
+    setStatus.textContent = T().testing;
+    setStatus.className = "set-status";
+    try {
+      const res = await openaiFetch("/models");
+      const ids = ((await res.json()).data || []).map((m) => m.id);
+      const chat = chatModels(ids);
+      $("#model-list").innerHTML = chat.map((id) => `<option value="${esc(id)}"></option>`).join("");
+      let note = T().connected(chat.length);
+      if (chat.length && !ids.includes(settings.model)) {
+        settings.model = PREFERRED_MODELS.find((m) => ids.includes(m)) || chat.find((m) => /mini/.test(m)) || chat[0];
+        modelInput.value = settings.model;
+        lsSet(LS_MODEL, settings.model);
+        note += " " + T().modelSwitched(settings.model);
+      }
+      setStatus.textContent = note;
+      setStatus.className = "set-status ok";
+      backfillVectors().catch(() => {});
+    } catch (err) {
+      setStatus.textContent = errorText(err);
+      setStatus.className = "set-status bad";
+    }
+  });
+  $("#key-remove").addEventListener("click", () => {
+    settings.key = "";
+    settings.remember = false;
+    keyInput.value = "";
+    $("#remember-input").checked = false;
+    ssSet(LS_KEY, "");
+    lsDel(LS_KEY);
+    updateKeyBanner();
+    setStatus.textContent = T().keyRemoved;
+    setStatus.className = "set-status";
+  });
+
+  // ------------------------------------------------------------------ example documents
+  $("#add-examples").addEventListener("click", async () => {
+    const btn = $("#add-examples");
+    btn.disabled = true;
+    for (const ex of SAMPLE_DOCS) {
+      if (docs.has(ex.meta.id)) continue;
+      let vecs = null;
+      if (aiReady() && settings.semantic) {
+        try { vecs = packVectors(await embed(ex.items.map((c) => `${ex.meta.title}\n${c.h || ""}\n${c.text}`.trim()))); } catch (e) { vecs = null; }
+      }
+      try { await saveDoc({ ...ex.meta }, ex.items, vecs); } catch (e) { flashNote(T().saveFail); break; }
+    }
+    btn.disabled = false;
     renderSources();
     updateEmpty();
+  });
+
+  // ------------------------------------------------------------------ start
+  applyLang();
+  updateKeyBanner();
+  updateSend();
+  (async () => {
+    idb = await openStore();
+    if (idb) {
+      try { await loadAll(); storeMode = "local"; } catch (e) { storeMode = "memory"; idb = null; }
+    } else storeMode = "memory";
+    rebuildIndex();
+    renderSources();
+    updateEmpty();
+    backfillVectors().catch(() => {});
   })();
 })();
