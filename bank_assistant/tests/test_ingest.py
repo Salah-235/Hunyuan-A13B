@@ -1,6 +1,6 @@
 from conftest import FIXTURES, sample_docx_fr, sample_xlsx
 
-from bankrag.ingest import Unit, chunk_units, extract, visual_to_logical
+from bankrag.ingest import Unit, chunk_units, extract, heading_level, logical_to_visual, visual_to_logical
 
 
 def test_arabic_pdf_lines_are_in_reading_order():
@@ -68,3 +68,55 @@ def test_text_and_csv():
     assert text.units[0].text == "المادة 1: نص تجريبي."
     csv = extract("Produit;Taux\nCrédit auto;7 %\n".encode("utf-8"), ".csv")
     assert csv.units[1].text == "Produit: Crédit auto | Taux: 7 %"
+
+
+def test_arabic_table_rows_keep_their_columns():
+    result = extract((FIXTURES / "table_ar.pdf").read_bytes(), ".pdf")
+    lines = [u.text for u in result.units]
+    assert "الرقم | المنتج | النسبة | المبلغ الأقصى" in lines
+    assert "1 | القرض العقاري | 6.5% | 5000000" in lines
+    assert "2 | قرض السيارة | 8% | 1500000" in lines
+
+
+def test_wrapped_lines_are_not_headings():
+    result = extract((FIXTURES / "table_ar.pdf").read_bytes(), ".pdf")
+    levels = {u.text: u.level for u in result.units}
+    assert levels["Article 7 : Remboursement anticipé"] == 2
+    assert levels["partie du capital restant dû moyennant une indemnité de 3 %."] == 0
+    assert heading_level("الجزء المتبقي من القرض") == 0
+    assert heading_level("الجزء الثاني: القروض") == 1
+    assert heading_level("المادة الأولى: تعريفات") == 2
+    assert heading_level("titre de propriété ou, à défaut, attestation") == 0
+    assert heading_level("Titre II : Des crédits") == 1
+    assert heading_level("article 12 du code de commerce") == 0
+
+
+def test_bidi_round_trip():
+    samples = [
+        "المادة 3: يجب ألا يتجاوز القسط الشهري 30% من الدخل الصافي.",
+        "تحدد نسبة الفائدة ب 6.5% سنوياً (ثابتة) ابتداءً من 01/03/2024.",
+        "انظر Article 12 من القانون رقم 03-11 المؤرخ في 26/08/2003.",
+        "القرض «الأخضر» بنسبة 1.75% فقط [للشباب].",
+        "6.5% سنوياً على مبلغ 1000000",
+    ]
+    for text in samples:
+        assert visual_to_logical(logical_to_visual(list(text), True), True) == text
+
+
+def test_docx_table_keeps_empty_cells_in_place():
+    import io
+
+    import docx
+
+    document = docx.Document()
+    table = document.add_table(rows=3, cols=4)
+    data = [("Carte", "Frais 2023", "Frais 2024", "Plafond retrait"), ("CIB Gold", "1000", "1000", "50000"),
+            ("CIB Classic", "", "500", "20000")]
+    for row, values in zip(table.rows, data):
+        for cell, value in zip(row.cells, values):
+            cell.text = value
+    buffer = io.BytesIO()
+    document.save(buffer)
+    texts = [u.text for u in extract(buffer.getvalue(), ".docx").units]
+    assert "Carte: CIB Gold | Frais 2023: 1000 | Frais 2024: 1000 | Plafond retrait: 50000" in texts
+    assert "Carte: CIB Classic | Frais 2024: 500 | Plafond retrait: 20000" in texts
