@@ -354,6 +354,31 @@ the a an of to in on for and or is are what how which who when where with by fro
     return pieces.filter(Boolean).map((p) => ({ text: p, page: unit.page, level: unit.level }));
   }
 
+  /** Line index -> page wherever the page changes inside a chunk ("0:3,12:4"), as page_map in ingest.py. */
+  function pageMap(units) {
+    const linePages = [];
+    for (const u of units) for (let i = 0; i <= (u.text.match(/\n/g) || []).length; i++) linePages.push(u.page ?? null);
+    if (new Set(linePages.filter((p) => p !== null)).size < 2) return "";
+    const marks = [];
+    let last = null;
+    linePages.forEach((p, i) => { if (p !== null && p !== last) { marks.push(`${i}:${p}`); last = p; } });
+    return marks.join(",");
+  }
+
+  /** The lines of a chunk and the page of each line. */
+  function chunkLinePages(chunk) {
+    const lines = chunk.text.split("\n");
+    const pages = lines.map(() => chunk.p0 ?? null);
+    if (chunk.pm) {
+      const marks = chunk.pm.split(",").map((m) => m.split(":").map(Number)).filter((m) => m.length === 2).sort((a, b) => a[0] - b[0]);
+      marks.forEach(([start, page], n) => {
+        const end = n + 1 < marks.length ? marks[n + 1][0] : lines.length;
+        for (let i = start; i < Math.min(end, lines.length); i++) pages[i] = page;
+      });
+    }
+    return { lines, pages };
+  }
+
   function chunkUnits(units, size = 1200, overlap = 200) {
     const expanded = [];
     for (const u of units) expanded.push(...(u.text.length > size ? splitLong(u, size) : [u]));
@@ -369,8 +394,11 @@ the a an of to in on for and or is are what how which who when where with by fro
         const text = current.map((u) => u.text).join("\n").trim();
         const pages = current.map((u) => u.page).filter((p) => p !== null && p !== undefined);
         if (text.length >= 15) {
-          chunks.push({ text, p0: pages.length ? Math.min(...pages) : null,
-            p1: pages.length ? Math.max(...pages) : null, h: chunkHeading });
+          const chunk = { text, p0: pages.length ? Math.min(...pages) : null,
+            p1: pages.length ? Math.max(...pages) : null, h: chunkHeading };
+          const pm = pageMap(current);
+          if (pm) chunk.pm = pm;
+          chunks.push(chunk);
         }
       }
       let tail = [];
@@ -460,6 +488,6 @@ the a an of to in on for and or is are what how which who when where with by fro
   }
 
   return { cleanText, normalize, stem, tokenize, detectLang, visualToLogical, logicalToVisual, rowToLogical, pdfEdgesFromOps, pdfItemsToLines,
-    headingLevel, linesToUnits, chunkUnits, Index };
+    headingLevel, linesToUnits, chunkUnits, chunkLinePages, Index };
 })();
 if (typeof module !== "undefined") module.exports = Core;

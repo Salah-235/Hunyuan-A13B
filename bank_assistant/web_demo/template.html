@@ -113,6 +113,8 @@ input[type="checkbox"] { width: 16px; height: 16px; margin: 4px 0 0; accent-colo
 .up-row[data-state="ok"] .up-state { color: var(--ok); }
 .up-row[data-state="bad"] { background: var(--bad-soft); flex-direction: column; }
 .up-row[data-state="bad"] .up-state { color: var(--bad); white-space: normal; }
+.up-row[data-state="warn"] { flex-direction: column; }
+.up-row[data-state="warn"] .up-state { color: var(--bad); white-space: normal; }
 .memory-note { margin: 0; font-size: .74rem; color: var(--muted); }
 .backdrop { display: none; }
 
@@ -196,8 +198,9 @@ details.more .cards { margin-top: 8px; }
 .doc:hover .sum, .sum:focus-visible { opacity: 1; }
 .sum:hover { color: var(--brand); opacity: 1; }
 @media (pointer: coarse) { .sum { opacity: .9; } }
+.ocr-badge.warn { background: var(--bad-soft); border-color: var(--bad); }
 .ocr-badge { display: inline-block; font-size: .64rem; font-weight: 700; padding: 0 6px; border-radius: 999px; background: var(--gold-soft); border: 1px solid var(--gold); color: var(--ink); cursor: help; vertical-align: 1px; }
-.summary-head { margin: 0; font-weight: 700; }
+.summary-head { margin: 0; font-weight: 700; overflow-wrap: anywhere; }
 .summary-meta { margin: 0 0 8px; font-size: .76rem; color: var(--muted); }
 .summary-meta:empty { display: none; }
 .page-ref { border: 0; background: none; padding: 0; color: var(--brand); font: inherit; cursor: pointer; white-space: nowrap; }
