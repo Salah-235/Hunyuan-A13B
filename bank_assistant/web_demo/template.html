@@ -34,6 +34,7 @@
   --shadow: 0 10px 34px rgba(0, 0, 0, .45);
   color-scheme: dark;
 }
+[hidden] { display: none !important; }
 html, body { height: 100%; }
 body { background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 15px; line-height: 1.65; overflow: hidden; }
 * { box-sizing: border-box; }
@@ -180,6 +181,28 @@ details.more .cards { margin-top: 8px; }
 .send .i-stop { display: none; fill: currentColor; stroke: none; }
 .send.busy .i-send { display: none; } .send.busy .i-stop { display: block; }
 .disclaimer { margin: 6px auto 0; max-width: 820px; text-align: center; font-size: .72rem; color: var(--muted); }
+.composer-foot { max-width: 820px; margin: 6px auto 0; display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 6px 14px; }
+.composer-foot .disclaimer { margin: 0; flex: 1 1 240px; }
+.mode-toggle { display: inline-flex; align-items: center; gap: 7px; font-size: .8rem; font-weight: 600; cursor: pointer; user-select: none; flex: none; position: relative; }
+.mode-toggle input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; }
+.mode-toggle .switch { width: 30px; height: 17px; border-radius: 999px; background: var(--line-strong); position: relative; flex: none; transition: background .15s; }
+.mode-toggle .switch::after { content: ""; position: absolute; top: 2px; inset-inline-start: 2px; width: 13px; height: 13px; border-radius: 50%; background: var(--surface); transition: inset-inline-start .15s; }
+.mode-toggle input:checked + .switch { background: var(--brand); }
+.mode-toggle input:checked + .switch::after { inset-inline-start: 15px; }
+.mode-toggle input:focus-visible + .switch { outline: 3px solid var(--ring); outline-offset: 2px; }
+.tips { font-size: .8rem; color: var(--muted); max-width: 520px; }
+.sum { margin-top: 3px; width: 32px; height: 32px; opacity: .6; }
+.sum .spark { fill: currentColor; stroke: none; }
+.doc:hover .sum, .sum:focus-visible { opacity: 1; }
+.sum:hover { color: var(--brand); opacity: 1; }
+@media (pointer: coarse) { .sum { opacity: .9; } }
+.ocr-badge { display: inline-block; font-size: .64rem; font-weight: 700; padding: 0 6px; border-radius: 999px; background: var(--gold-soft); border: 1px solid var(--gold); color: var(--ink); cursor: help; vertical-align: 1px; }
+.summary-head { margin: 0; font-weight: 700; }
+.summary-meta { margin: 0 0 8px; font-size: .76rem; color: var(--muted); }
+.summary-meta:empty { display: none; }
+.page-ref { border: 0; background: none; padding: 0; color: var(--brand); font: inherit; cursor: pointer; white-space: nowrap; }
+.page-ref:hover { text-decoration: underline; }
+.tools { display: flex; gap: 6px; }
 
 .reader { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 16px; background: rgba(6, 20, 25, .5); }
 .reader-card { width: min(640px, 100%); max-height: 85%; display: flex; flex-direction: column; background: var(--surface); border-radius: var(--r-lg); box-shadow: var(--shadow); overflow: hidden; }
@@ -264,6 +287,7 @@ details.more .cards { margin-top: 8px; }
           <!--LOGO-->
           <h1 id="empty-title" data-t="emptyTitle"></h1>
           <p id="empty-text" data-t="emptyText"></p>
+          <p class="tips" id="empty-tips" data-t="tips"></p>
           <div class="examples" id="examples"></div>
           <div id="no-docs" hidden>
             <h1 data-t="noDocsTitle"></h1>
@@ -279,7 +303,12 @@ details.more .cards { margin-top: 8px; }
             <svg class="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
           </button>
         </div>
-        <p class="disclaimer" data-t="disclaimer"></p>
+        <div class="composer-foot">
+          <label class="mode-toggle" data-th="modeFullHint">
+            <input type="checkbox" id="mode-full"><span class="switch" aria-hidden="true"></span><span data-t="modeFull"></span>
+          </label>
+          <p class="disclaimer" data-t="disclaimer"></p>
+        </div>
       </form>
     </main>
   </div>
