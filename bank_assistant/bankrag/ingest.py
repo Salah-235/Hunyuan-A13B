@@ -88,8 +88,19 @@ _JOINERS = set(" .,:/-'’_")
 _MIRROR = str.maketrans("()[]{}<>«»", ")(][}{><»«")
 CELL_GAP = 1.6  # a gap wider than 1.6 x font size separates table cells
 _PCT_BEFORE_NUMBER = re.compile("(?<![0-9٠-٩])([%٪‰])([0-9]+(?:[.,][0-9]+)*|[٠-٩]+(?:[٫٬][٠-٩]+)*)")
-# OCR text: "%30" -> "30%", but never touch a sign that already follows a number ("6,5 % 12 mois")
-_PCT_OCR = re.compile("(?<![0-9٠-٩])(?<![0-9٠-٩][ \u00a0\u202f])([%٪‰])([0-9]+(?:[.,][0-9]+)*|[٠-٩]+(?:[٫٬][٠-٩]+)*)")
+_PCT_SIGN_FIRST = re.compile("(?<![0-9٠-٩])([%٪‰])([0-9]+(?:[.,][0-9]+)*|[٠-٩]+(?:[٫٬][٠-٩]+)*)")
+_PLAIN_NUMBER_BEFORE = re.compile("(?:^|[^%٪‰0-9٠-٩.,٫٬])[0-9٠-٩][0-9٠-٩.,٫٬]*[ \u00a0\u202f]$")
+
+
+def fix_ocr_percent(text):
+    """OCR text: "%30" -> "30%" (also in rows like "%5 %5.5 %6"), but never touch a sign that
+    already follows a plain number ("6,5 % 12 mois")."""
+    def swap(match):
+        if _PLAIN_NUMBER_BEFORE.search(match.string[max(0, match.start() - 40):match.start()]):
+            return match.group(0)
+        return match.group(2) + match.group(1)
+
+    return _PCT_SIGN_FIRST.sub(swap, text)
 
 _AN = re.compile("[\u0660-\u0669\u066B\u066C]")
 _EN = re.compile("[0-9\u06F0-\u06F9]")
@@ -389,45 +400,55 @@ def extract_pdf(data, ocr=None, ocr_max_pages=300):
     result = Extraction(pages=len(pages))
     empty = [n for n, text in enumerate(pages, start=1) if len(text.strip()) < MIN_PAGE_CHARS]
     ocr_pages = set()
-    ocr_failed = ocr_partial = False
-    if empty and ocr is not None:
-        todo = empty[:ocr_max_pages]
-        failures = consecutive = 0
+    unread = 0      # scanned pages that were skipped (over the limit, engine stopped) or failed
+    attempted = False
+    image_pages = 0  # near-empty pages showing an image, when OCR is off
+    renderer = None
+    if empty:
         try:
             renderer = PageRenderer(data)
         except Exception as exc:  # noqa: BLE001 - pages cannot be rendered: keep the text layer
             log.warning("could not open PDF for OCR: %s", exc)
-            renderer, todo = None, []
-            failures = 1
-        try:
+    try:
+        if empty and ocr is not None:
+            attempted = True
+            todo = empty[:ocr_max_pages] if renderer is not None else []
+            done = 0
+            consecutive = 0
             for number in todo:
+                done += 1
                 try:
                     text = ocr.page_text(renderer.render(number, ocr.dpi, grayscale=ocr.grayscale))
                     consecutive = 0
                 except Exception as exc:  # noqa: BLE001 - one unreadable page must not fail the document
                     log.warning("OCR failed on page %s: %s", number, exc)
-                    failures += 1
+                    unread += 1
                     consecutive += 1
                     if consecutive >= 3:
                         break  # the engine is down or hung: do not wait for every page to time out
                     continue
                 if len(text.strip()) >= MIN_PAGE_CHARS:
-                    pages[number - 1] = _PCT_OCR.sub(r"\2\1", text)  # "%30" -> "30%"
+                    pages[number - 1] = fix_ocr_percent(text)
                     ocr_pages.add(number)
-        finally:
-            if renderer is not None:
-                renderer.close()
-        ocr_failed = not ocr_pages
-        # some scanned pages were skipped (over the limit) or could not be read
-        ocr_partial = bool(ocr_pages) and (len(empty) > len(todo) or failures > 0)
+            unread += len(empty) - done  # never attempted
+        elif empty and renderer is not None:
+            image_pages = sum(1 for number in empty if renderer.has_image(number))
+    finally:
+        if renderer is not None:
+            renderer.close()
     text_chars = 0
     for number, text in enumerate(pages, start=1):
         text_chars += len(text.strip())
         result.units.extend(_lines_to_units(text, number, number in ocr_pages))
+    mostly_scanned = result.pages and text_chars < MIN_PAGE_CHARS * result.pages
     if ocr_pages:
-        result.warning = "ocr_partial" if ocr_partial else "ocr"
-    elif result.pages and text_chars < MIN_PAGE_CHARS * result.pages:
-        result.warning = "ocr_failed" if ocr_failed else "scanned_pdf"
+        result.warning = "ocr_partial" if unread else "ocr"
+    elif mostly_scanned:
+        result.warning = "ocr_failed" if attempted else "scanned_pdf"
+    elif unread:
+        result.warning = "ocr_partial"          # e.g. the vision server was down for the scanned pages
+    elif image_pages:
+        result.warning = "scanned_pages"        # scanned pages in a text PDF, OCR is off
     return result
 
 

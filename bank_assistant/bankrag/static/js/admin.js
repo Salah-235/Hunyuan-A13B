@@ -31,13 +31,18 @@
     return Math.max(1, Math.round(bytes / 1024)) + " KB";
   }
 
-  function problemText(codes) {
-    if (!codes) return "";
-    return codes.split(",").filter(Boolean).map((code) => { const key = I18N_KEY(code); return key ? t(key) : code; }).join(" ");
+  function problemText(code) {
+    if (!code) return "";
+    const key = I18N_KEY(code);
+    return key ? t(key) : code;  // an error can be a raw message: show it unchanged
+  }
+  function warningText(codes) {
+    return (codes || "").split(",").filter(Boolean).map(problemText).join(" ");
   }
   function I18N_KEY(code) {
     const map = {
       scanned_pdf: "warn_scanned_pdf", ocr: "warn_ocr", ocr_failed: "warn_ocr_failed", ocr_partial: "warn_ocr_partial",
+      scanned_pages: "warn_scanned_pages",
       processing_failed: "err_processing_failed",
       embedding_failed: "warn_embedding_failed", no_text: "err_no_text",
       encrypted_pdf: "err_encrypted_pdf", unsupported_type: "err_unsupported_type",
@@ -88,7 +93,7 @@
           <div class="doc-info">
             <div class="doc-title">${escapeHtml(d.title)}</div>
             <div class="doc-sub">${meta}</div>
-            ${d.warning ? `<div class="doc-warning">⚠ ${escapeHtml(problemText(d.warning))}</div>` : ""}
+            ${d.warning ? `<div class="doc-warning">⚠ ${escapeHtml(warningText(d.warning))}</div>` : ""}
             ${d.status === "error" ? `<div class="doc-error">${escapeHtml(problemText(d.error))}</div>` : ""}
           </div>
         </div>

@@ -3,6 +3,7 @@ import logging
 import queue
 import re
 import threading
+import time
 
 from .db import now_iso
 from .ingest import chunk_line_pages
@@ -217,20 +218,23 @@ class _Job:
     def __init__(self):
         self.events = queue.Queue()
         self.done = threading.Event()
+        self.result = []  # the events that make up the outcome (text, warning, error), for followers
 
 
 class Summarizer:
     """Whole-document summaries: one call for short documents, map-reduce for long ones.
 
     A summary is prepared in a background thread, so it is finished and cached even if the person
-    who asked closes the page; others asking for the same summary meanwhile wait for that job
-    instead of starting their own, and only SUMMARY_MAX_JOBS summaries run at the same time.
+    who asked closes the page. Others asking for the same summary meanwhile get a "pending" answer
+    at once and ask again a few seconds later (follow=True) instead of starting their own job or
+    holding a server thread; only SUMMARY_MAX_JOBS summaries run at the same time.
     Finished summaries are cached per document and language (table `summaries`); the cache is
     cleared whenever the document is re-processed or deleted. A summary that was cut short is
     shown with a warning and not cached."""
 
     MAX_ROUNDS = 4
     NOTE_TOKENS = 4000
+    OUTCOME_SECONDS = 900  # how long the result of an uncached job is kept for people following it
 
     def __init__(self, cfg, db, llm):
         self.cfg = cfg
@@ -238,6 +242,7 @@ class Summarizer:
         self.llm = llm
         self.lock = threading.Lock()
         self.jobs = {}
+        self.outcomes = {}  # (doc_id, lang) -> (time, events) of finished jobs
 
     def document_text(self, doc):
         """The document rebuilt from its chunks, overlap removed, with a marker at each page change.
@@ -251,7 +256,14 @@ class Summarizer:
             lines, pages = chunk_line_pages(row["text"], row["page_start"], row["page_map"])
             # consecutive chunks repeat a few trailing lines of the previous one (overlap)
             stripped = [line.strip() for line in lines]
-            for k in range(min(len(lines), len(previous), 20), 0, -1):
+            # the overlap is at most CHUNK_OVERLAP characters of trailing lines (many if they are short)
+            longest, total = 0, 0
+            for line in reversed(previous):
+                if total + len(line) > self.cfg.CHUNK_OVERLAP:
+                    break
+                total += len(line) + 1
+                longest += 1
+            for k in range(min(len(lines), len(previous), max(longest, 20)), 0, -1):
                 if stripped[:k] == previous[-k:]:
                     lines, pages = lines[k:], pages[k:]
                     break
@@ -278,42 +290,46 @@ class Summarizer:
         return self.db.query_one("SELECT text, created_at FROM summaries WHERE doc_id = ? AND lang = ?",
                                  (doc_id, lang))
 
-    def stream(self, doc, lang, refresh=False):
-        """Yields event dicts: status / summary / delta / warning / error / done."""
+    def stream(self, doc, lang, refresh=False, follow=False):
+        """Yields event dicts: status / summary / delta / warning / error / pending / done.
+
+        "pending" means another request is preparing this summary: ask again with follow=True."""
         key = (doc["id"], lang)
         if not refresh:
             row = self.cached(doc["id"], lang)
             if row:
                 yield from self._cached_events(row)
                 return
-        busy = False
+        busy = pending = False
+        outcome = None
         with self.lock:
+            now = time.monotonic()
+            for old in [k for k, (at, _) in self.outcomes.items() if now - at > self.OUTCOME_SECONDS]:
+                del self.outcomes[old]
             job = self.jobs.get(key)
-            leader = job is None
-            if leader and len(self.jobs) >= max(1, self.cfg.SUMMARY_MAX_JOBS):
+            if job is not None:
+                pending = True
+            elif follow and key in self.outcomes:
+                outcome = self.outcomes[key][1]
+            elif len(self.jobs) >= max(1, self.cfg.SUMMARY_MAX_JOBS):
                 busy = True
-            elif leader:
+            else:
                 job = self.jobs[key] = _Job()
                 threading.Thread(target=self._run, args=(job, key, doc, lang), name="summary",
                                  daemon=True).start()
         if busy:
             yield {"type": "error", "code": "summary_busy"}
-            return
-        if leader:
+        elif pending:
+            yield {"type": "status", "stage": "waiting"}
+            yield {"type": "pending"}
+        elif outcome is not None:
+            yield from outcome  # a summary that was shown but not cached (cut off, failed...)
+        else:
             while True:
                 event = job.events.get()
                 if event is None:
                     return
                 yield event
-        # someone else is preparing this summary: wait for it, keeping the connection alive
-        yield {"type": "status", "stage": "waiting"}
-        while not job.done.wait(timeout=5):
-            yield {"type": "status", "stage": "waiting"}
-        row = self.cached(doc["id"], lang)
-        if row:
-            yield from self._cached_events(row)
-        else:
-            yield {"type": "error", "code": "summary_failed"}
 
     @staticmethod
     def _cached_events(row):
@@ -322,15 +338,25 @@ class Summarizer:
         yield {"type": "done"}
 
     def _run(self, job, key, doc, lang):
+        text = []
         try:
             for event in self._generate(doc, lang):
                 job.events.put(event)
+                if event["type"] == "delta":
+                    text.append(event["text"])
+                elif event["type"] in ("warning", "error"):
+                    job.result.append(event)
         except Exception:  # noqa: BLE001 - report, never kill the thread silently
             log.exception("summary failed for %s", doc["id"])
             job.events.put({"type": "error", "code": "error_generic"})
+            job.result.append({"type": "error", "code": "error_generic"})
         finally:
+            outcome = ([{"type": "delta", "text": "".join(text)}] if text else []) + job.result
+            if not any(e["type"] == "error" for e in outcome):
+                outcome.append({"type": "done"})
             with self.lock:
                 self.jobs.pop(key, None)
+                self.outcomes[key] = (time.monotonic(), outcome)
             job.done.set()
             job.events.put(None)
 

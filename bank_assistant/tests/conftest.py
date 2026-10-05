@@ -85,8 +85,9 @@ class Client:
             payload["mode"] = mode
         return self.events(self.api("POST", "/api/ask", payload))
 
-    def summary(self, doc_id, lang="ar", refresh=False):
-        return self.events(self.api("POST", f"/api/documents/{doc_id}/summary", {"lang": lang, "refresh": refresh}))
+    def summary(self, doc_id, lang="ar", refresh=False, follow=False):
+        return self.events(self.api("POST", f"/api/documents/{doc_id}/summary",
+                                    {"lang": lang, "refresh": refresh, "follow": follow}))
 
     @staticmethod
     def events(response):

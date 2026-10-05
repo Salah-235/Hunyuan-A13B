@@ -134,6 +134,7 @@ STRINGS = {
     "semantic_ready": ("فهرس دلالي", "Index sémantique"),
     "warn_scanned_pdf": ("يبدو أن الملف ممسوح ضوئياً (صور) بدون نص قابل للقراءة، وخاصية OCR غير مفعلة على الخادم. فعّلها أو استخدم نسخة PDF نصية.", "Ce fichier semble scanné (images) sans texte exploitable et l'OCR n'est pas activé sur le serveur. Activez-le ou utilisez un PDF texte."),
     "warn_ocr": ("بعض الصفحات ممسوحة ضوئياً وتمت قراءتها آلياً (OCR) — قد تحتوي الأرقام على أخطاء قراءة.", "Certaines pages scannées ont été lues par OCR — les chiffres peuvent contenir des erreurs de lecture."),
+    "warn_scanned_pages": ("بعض صفحات الملف صور ممسوحة ضوئياً ولم تُقرأ لأن خاصية OCR غير مفعلة على الخادم.", "Certaines pages du fichier sont des images scannées non lues : l'OCR n'est pas activé sur le serveur."),
     "warn_ocr_partial": ("بعض الصفحات الممسوحة ضوئياً لم تُقرأ آلياً (تجاوزت الحد أو تعذرت قراءتها)، فقد تنقص بعض المعلومات.", "Certaines pages scannées n'ont pas été lues (limite dépassée ou lecture impossible) : des informations peuvent manquer."),
     "err_processing_failed": ("توقف الخادم مرتين أثناء معالجة هذا الملف (قد يكون كبيراً جداً). اضغط «إعادة المعالجة» للمحاولة من جديد.", "Le serveur s'est arrêté deux fois en traitant ce fichier (peut-être trop volumineux). Cliquez sur « Retraiter » pour réessayer."),
     "warn_ocr_failed": ("الملف ممسوح ضوئياً وتعذرت قراءته آلياً (OCR). تحقق من إعدادات OCR في الخادم أو استخدم نسخة PDF نصية.", "Fichier scanné que l'OCR n'a pas pu lire. Vérifiez la configuration OCR du serveur ou utilisez un PDF texte."),

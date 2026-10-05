@@ -309,17 +309,21 @@ def test_concurrent_requests_share_one_summary_job(tmp_path, llm_server, monkeyp
         t.join(30)
     after = sum("You summarise" in c["messages"][0]["content"] for c in chat_calls())
     assert after - before == 1                                  # one model run for doc a
-    assert {"type": "status", "stage": "waiting"} in results["second"]
-    assert results["second"][-1]["type"] == "done" and text_of(results["second"]) == text_of(results["first"]).strip()
+    # the second request does not wait on the server: it is told to ask again
+    assert results["second"] == [{"type": "status", "stage": "waiting"}, {"type": "pending"}]
     assert results["other"] == [{"type": "error", "code": "summary_busy"}]
+    _, again = client.summary(doc_id=a["id"], follow=True)
+    assert again[0].get("cached") is True and text_of(again) == text_of(results["first"]).strip()
 
 
 def test_ocr_percent_normalisation_only_touches_signs_before_numbers():
-    from bankrag.ingest import _PCT_OCR
+    from bankrag.ingest import fix_ocr_percent
 
-    assert _PCT_OCR.sub(r"\2\1", "القسط الشهري %30 من الدخل") == "القسط الشهري 30% من الدخل"
-    assert _PCT_OCR.sub(r"\2\1", "Taux : 6,5 % 12 mois") == "Taux : 6,5 % 12 mois"
-    assert _PCT_OCR.sub(r"\2\1", "taux de 5 %10 ans") == "taux de 5 %10 ans"
+    assert fix_ocr_percent("القسط الشهري %30 من الدخل") == "القسط الشهري 30% من الدخل"
+    assert fix_ocr_percent("Taux : 6,5 % 12 mois") == "Taux : 6,5 % 12 mois"
+    assert fix_ocr_percent("taux de 5 %10 ans") == "taux de 5 %10 ans"
+    assert fix_ocr_percent("نسبة الفائدة %5 %5.5 %6 %6.5") == "نسبة الفائدة 5% 5.5% 6% 6.5%"
+    assert fix_ocr_percent("%30 %40 %50") == "30% 40% 50%"
 
 
 def test_giant_pages_are_rendered_within_the_pixel_cap():
@@ -387,3 +391,61 @@ def test_llm_reports_finish_reason_and_strips_unclosed_thinking(tmp_path, llm_se
     info = {}
     list(llm.stream_chat([{"role": "user", "content": "hello"}], info=info))
     assert info["finish"] == "stop"
+
+
+def test_followers_get_the_result_of_an_uncached_job(tmp_path, llm_server):
+    app, client = new_app(tmp_path, llm_server)
+    doc = upload(client, app, "long.txt", ("TRUNCATE-ME\n" + LONG_RULES).encode("utf-8"))
+    _, first = client.summary(doc["id"])
+    assert {"type": "warning", "code": "summary_truncated"} in first
+    # someone who was waiting for that job asks again: same text and warning, no new model run
+    calls = len(chat_calls())
+    _, follow = client.summary(doc["id"], follow=True)
+    assert text_of(follow) == text_of(first) and {"type": "warning", "code": "summary_truncated"} in follow
+    assert len(chat_calls()) == calls
+    # a new request (not following) tries again
+    client.summary(doc["id"])
+    assert len(chat_calls()) == calls + 1
+
+
+def test_scanned_page_in_text_pdf_is_flagged(tmp_path):
+    import io
+
+    from PIL import Image
+    from pypdf import PdfReader, PdfWriter
+
+    from bankrag.ingest import extract_pdf
+
+    scan = io.BytesIO()
+    Image.new("L", (400, 560), 255).save(scan, "PDF", resolution=50)
+    writer = PdfWriter()
+    for page in PdfReader(FIXTURES / "loans_ar.pdf").pages:
+        writer.add_page(page)
+    writer.add_page(PdfReader(scan).pages[0])
+    writer.add_blank_page(width=595, height=842)
+    out = io.BytesIO()
+    writer.write(out)
+    data = out.getvalue()
+
+    class Broken:
+        name, dpi, grayscale = "broken", 100, True
+
+        def page_text(self, image):
+            raise RuntimeError("vision server down")
+
+    assert extract_pdf(data).warning == "scanned_pages"            # OCR off: one image page (blank page ignored)
+    assert extract_pdf(data, Broken()).warning == "ocr_partial"    # OCR failed on the scanned pages
+
+
+def test_tesseract_strips_stay_under_the_size_limit():
+    from PIL import Image
+
+    engine = TesseractOcr(Config(OCR_ENGINE="tesseract"))
+    engine.number_lang = "eng"
+    seen = []
+    engine._words = lambda image, langs, config: seen.append(image.height) or []
+    image = Image.new("L", (2480, 3508), 255)
+    words = [{"text": str(1000 + i), "line": (1, 1, i), "n": 1, "box": (100, 10 + (i % 60) * 55, 220, 60 + (i % 60) * 55)}
+             for i in range(700)]
+    engine._fix_percentages(image, words)
+    assert len(seen) > 1 and max(seen) <= engine.STRIP_MAX_HEIGHT + 100

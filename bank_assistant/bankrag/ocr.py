@@ -54,6 +54,17 @@ class PageRenderer:
         finally:
             page.close()
 
+    def has_image(self, number):
+        import pypdfium2.raw as pdfium_c
+
+        page = self.pdf[number - 1]
+        try:
+            return any(True for _ in page.get_objects(filter=[pdfium_c.FPDF_PAGEOBJ_IMAGE], max_depth=3))
+        except Exception:  # noqa: BLE001
+            return False
+        finally:
+            page.close()
+
     def close(self):
         self.pdf.close()
 
@@ -118,33 +129,52 @@ class TesseractOcr:
                 })
         return words
 
-    def _fix_percentages(self, image, words):
-        """Re-read every number in one strip image (English model, digits and % only)."""
-        from PIL import Image
+    STRIP_MAX_HEIGHT = 20000  # Tesseract refuses images taller than 32767 px
 
+    def _fix_percentages(self, image, words):
+        """Re-read every number, a strip image of number crops at a time (English model, digits and %)."""
         targets = [w for w in words if _NUMBER.search(w["text"]) and not _PERCENT.search(w["text"])
                    and len(w["text"]) <= 16]
         if not targets or not self.number_lang:
             return
-        pad, gap = 6, 24
+        pad = 6
         crops = []
         for word in targets:
             left, top, right, bottom = word["box"]
             crops.append(image.crop((max(0, left - pad), max(0, top - pad),
                                      min(image.width, right + pad), min(image.height, bottom + pad))))
-        width = max(c.width for c in crops) + 2 * gap
-        height = sum(c.height + gap for c in crops) + gap
+        batch, height = [], 0
+        for index, crop in enumerate(crops):
+            if batch and height + crop.height + 24 > self.STRIP_MAX_HEIGHT:
+                self._reread(batch, crops, targets)
+                batch, height = [], 0
+            batch.append(index)
+            height += crop.height + 24
+        if batch:
+            self._reread(batch, crops, targets)
+
+    def _reread(self, batch, crops, targets):
+        from PIL import Image
+
+        gap = 24
+        width = max(crops[i].width for i in batch) + 2 * gap
+        height = sum(crops[i].height + gap for i in batch) + gap
         strip = Image.new("L", (width, height), 255)
         bands, y = [], gap
-        for crop in crops:
-            strip.paste(crop, (gap, y))
-            bands.append((y, y + crop.height))
-            y += crop.height + gap
+        for i in batch:
+            strip.paste(crops[i], (gap, y))
+            bands.append((i, y, y + crops[i].height))
+            y += crops[i].height + gap
         found = {}
         config = "--psm 6 -c tessedit_char_whitelist=0123456789%.,"
-        for item in self._words(strip, self.number_lang, config):
+        try:
+            items = self._words(strip, self.number_lang, config)
+        except Exception as exc:  # noqa: BLE001 - the repair is optional: keep the first reading
+            log.warning("percent re-read failed: %s", exc)
+            return
+        for item in items:
             middle = (item["box"][1] + item["box"][3]) / 2
-            for index, (top, bottom) in enumerate(bands):
+            for index, top, bottom in bands:
                 if top - gap / 2 <= middle <= bottom + gap / 2:
                     found[index] = found.get(index, "") + item["text"]
                     break

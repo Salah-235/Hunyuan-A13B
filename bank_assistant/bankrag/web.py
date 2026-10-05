@@ -432,8 +432,10 @@ def create_app(cfg=None, start_worker=True):
         lang = data.get("lang") if data.get("lang") in LANGS else g.get("lang", cfg.DEFAULT_LANG)
         # a fresh summary costs model time: only administrators can replace the saved one
         refresh = bool(data.get("refresh")) and g.user["role"] == "admin"
-        audit("summary", doc["title"])
-        return ndjson(summarizer.stream(doc, lang, refresh), "summary failed")
+        follow = bool(data.get("follow"))  # asking again while another request prepares it
+        if not follow:
+            audit("summary", doc["title"])
+        return ndjson(summarizer.stream(doc, lang, refresh, follow), "summary failed")
 
     def ndjson(events, what):
         def generate():

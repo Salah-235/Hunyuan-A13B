@@ -491,26 +491,39 @@
       if (follow) scrollToBottom(false);
     };
     const schedule = () => { if (!pending) { pending = true; requestAnimationFrame(render); } };
+    const signal = controller.signal;
     try {
-      const response = await api("POST", `/api/documents/${encodeURIComponent(doc.id)}/summary`,
-        { lang: window.App.LANG, refresh: !!refresh }, { raw: true, signal: controller.signal });
-      await readEvents(response, (ev) => {
-        if (ev.type === "status") {
-          view.stage.textContent = ev.stage === "reading"
-            ? t("stage_reading", { part: ev.part, parts: ev.parts }) : t("stage_" + ev.stage);
-        } else if (ev.type === "summary") {
-          cachedAt = ev.cached ? ev.created_at : null;
-        } else if (ev.type === "warning") {
-          warning = ev.code;
-        } else if (ev.type === "delta") {
-          if (!text) view.status.classList.add("hidden");
-          text += ev.text;
-          schedule();
-        } else if (ev.type === "error") {
-          view.answer.classList.add("error");
-          text = (text ? text + "\n\n" : "") + t(errorKey(ev.code));
-        }
-      });
+      let follow = false, pendingJob = true;
+      // another employee may be preparing the same summary: then ask again every few seconds
+      while (pendingJob) {
+        pendingJob = false;
+        if (follow) await new Promise((resolve, reject) => {
+          const timer = setTimeout(resolve, 4000);
+          signal.addEventListener("abort", () => { clearTimeout(timer); reject(new DOMException("stopped", "AbortError")); }, { once: true });
+        });
+        const response = await api("POST", `/api/documents/${encodeURIComponent(doc.id)}/summary`,
+          { lang: window.App.LANG, refresh: !!refresh && !follow, follow }, { raw: true, signal });
+        follow = true;
+        await readEvents(response, (ev) => {
+          if (ev.type === "pending") {
+            pendingJob = true;
+          } else if (ev.type === "status") {
+            view.stage.textContent = ev.stage === "reading"
+              ? t("stage_reading", { part: ev.part, parts: ev.parts }) : t("stage_" + ev.stage);
+          } else if (ev.type === "summary") {
+            cachedAt = ev.cached ? ev.created_at : null;
+          } else if (ev.type === "warning") {
+            warning = ev.code;
+          } else if (ev.type === "delta") {
+            if (!text) view.status.classList.add("hidden");
+            text += ev.text;
+            schedule();
+          } else if (ev.type === "error") {
+            view.answer.classList.add("error");
+            text = (text ? text + "\n\n" : "") + t(errorKey(ev.code));
+          }
+        });
+      }
     } catch (err) {
       if (err.name === "AbortError") {
         text = (text ? text + "\n\n" : "") + t("stopped");
@@ -527,7 +540,7 @@
       view.answer.innerHTML = renderSummary(text, doc);
       const ok = text && !view.answer.classList.contains("error");
       if (ok && warning) {
-        meta.textContent = "⚠ " + t(warning);  // shown but not saved: anyone can try again
+        meta.textContent = "⚠ " + t(warning) + " · " + t("summary_note");  // shown but not saved: anyone can try again
         meta.classList.add("warn");
       } else {
         meta.textContent = ok ? (cachedAt ? t("summary_cached", { date: window.App.formatDate(cachedAt) }) + " · " : "") + t("summary_note") : "";
