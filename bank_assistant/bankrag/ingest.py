@@ -89,16 +89,23 @@ _MIRROR = str.maketrans("()[]{}<>«»", ")(][}{><»«")
 CELL_GAP = 1.6  # a gap wider than 1.6 x font size separates table cells
 _PCT_BEFORE_NUMBER = re.compile("(?<![0-9٠-٩])([%٪‰])([0-9]+(?:[.,][0-9]+)*|[٠-٩]+(?:[٫٬][٠-٩]+)*)")
 _PCT_SIGN_FIRST = re.compile("(?<![0-9٠-٩])([%٪‰])([0-9]+(?:[.,][0-9]+)*|[٠-٩]+(?:[٫٬][٠-٩]+)*)")
-_PLAIN_NUMBER_BEFORE = re.compile("(?:^|[^%٪‰0-9٠-٩.,٫٬])[0-9٠-٩][0-9٠-٩.,٫٬]*[ \u00a0\u202f]$")
+_PLAIN_NUMBER_BEFORE = re.compile("(?:^|[^%٪‰0-9٠-٩.,٫٬])[0-9٠-٩]+(?:[.,٫٬][0-9٠-٩]+)*[ \u00a0\u202f]$")
+_SPACES = re.compile("[ \u00a0\u202f]*")
 
 
 def fix_ocr_percent(text):
     """OCR text: "%30" -> "30%" (also in rows like "%5 %5.5 %6"), but never touch a sign that
-    already follows a plain number ("6,5 % 12 mois")."""
+    already follows a plain number ("6,5 %12"); a row of signs follows the reading of its first one."""
+    state = {"end": -1, "converted": False}
+
     def swap(match):
-        if _PLAIN_NUMBER_BEFORE.search(match.string[max(0, match.start() - 40):match.start()]):
-            return match.group(0)
-        return match.group(2) + match.group(1)
+        start = match.start()
+        chained = state["end"] >= 0 and _SPACES.fullmatch(match.string, state["end"], start) is not None
+        state["end"] = match.end()
+        if not chained:
+            before = match.string[max(0, start - 40):start]
+            state["converted"] = not _PLAIN_NUMBER_BEFORE.search(before)
+        return match.group(2) + match.group(1) if state["converted"] else match.group(0)
 
     return _PCT_SIGN_FIRST.sub(swap, text)
 

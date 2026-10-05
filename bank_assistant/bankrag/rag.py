@@ -290,27 +290,39 @@ class Summarizer:
         return self.db.query_one("SELECT text, created_at FROM summaries WHERE doc_id = ? AND lang = ?",
                                  (doc_id, lang))
 
+    def following(self, doc_id, lang):
+        """True while a job for this summary runs, or its uncached result is kept for followers."""
+        with self.lock:
+            return (doc_id, lang) in self.jobs or (doc_id, lang) in self.outcomes
+
     def stream(self, doc, lang, refresh=False, follow=False):
         """Yields event dicts: status / summary / delta / warning / error / pending / done.
 
         "pending" means another request is preparing this summary: ask again with follow=True."""
         key = (doc["id"], lang)
-        if not refresh:
-            row = self.cached(doc["id"], lang)
-            if row:
-                yield from self._cached_events(row)
-                return
-        busy = pending = False
-        outcome = None
         with self.lock:
             now = time.monotonic()
             for old in [k for k, (at, _) in self.outcomes.items() if now - at > self.OUTCOME_SECONDS]:
                 del self.outcomes[old]
+            running = key in self.jobs
+            outcome = self.outcomes.get(key, (None, None))[1] if follow else None
+        if follow and running:
+            yield {"type": "status", "stage": "waiting"}
+            yield {"type": "pending"}
+            return
+        if not refresh or follow:
+            row = self.cached(doc["id"], lang)
+            if row:
+                yield from self._cached_events(row)
+                return
+        if outcome is not None:
+            yield from outcome  # a summary that was shown but not cached (cut off, failed...)
+            return
+        busy = pending = False
+        with self.lock:
             job = self.jobs.get(key)
             if job is not None:
                 pending = True
-            elif follow and key in self.outcomes:
-                outcome = self.outcomes[key][1]
             elif len(self.jobs) >= max(1, self.cfg.SUMMARY_MAX_JOBS):
                 busy = True
             else:
@@ -322,8 +334,6 @@ class Summarizer:
         elif pending:
             yield {"type": "status", "stage": "waiting"}
             yield {"type": "pending"}
-        elif outcome is not None:
-            yield from outcome  # a summary that was shown but not cached (cut off, failed...)
         else:
             while True:
                 event = job.events.get()

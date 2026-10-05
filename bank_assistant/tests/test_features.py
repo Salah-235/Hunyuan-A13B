@@ -324,6 +324,8 @@ def test_ocr_percent_normalisation_only_touches_signs_before_numbers():
     assert fix_ocr_percent("taux de 5 %10 ans") == "taux de 5 %10 ans"
     assert fix_ocr_percent("نسبة الفائدة %5 %5.5 %6 %6.5") == "نسبة الفائدة 5% 5.5% 6% 6.5%"
     assert fix_ocr_percent("%30 %40 %50") == "30% 40% 50%"
+    assert fix_ocr_percent("12 %5 %6") == "12 %5 %6"          # a row follows the reading of its first sign
+    assert fix_ocr_percent("1. %5 et 2024, %3") == "1. 5% et 2024, 3%"
 
 
 def test_giant_pages_are_rendered_within_the_pixel_cap():
@@ -449,3 +451,49 @@ def test_tesseract_strips_stay_under_the_size_limit():
              for i in range(700)]
     engine._fix_percentages(image, words)
     assert len(seen) > 1 and max(seen) <= engine.STRIP_MAX_HEIGHT + 100
+
+
+
+def test_small_logo_on_a_short_page_is_not_a_scanned_page(tmp_path):
+    import io
+
+    from PIL import Image
+    from pypdf import PdfReader, PdfWriter
+
+    from bankrag.ingest import extract_pdf
+
+    logo = io.BytesIO()
+    Image.new("L", (60, 60), 0).save(logo, "PDF", resolution=72)  # 60 x 60 pt image page
+    cover = PdfReader(logo).pages[0]
+    cover.mediabox.upper_right = (595, 842)                        # the logo is now a corner of an A4 page
+    writer = PdfWriter()
+    writer.add_page(cover)
+    for page in PdfReader(FIXTURES / "loans_ar.pdf").pages:
+        writer.add_page(page)
+    out = io.BytesIO()
+    writer.write(out)
+    assert extract_pdf(out.getvalue()).warning == ""
+
+
+def test_summary_polls_are_audited_once_and_wait_for_a_refresh(tmp_path, llm_server, monkeypatch):
+    import threading
+    import time
+
+    app, client = new_app(tmp_path, llm_server)
+    doc = upload(client, app, "a.txt", LONG_RULES.encode("utf-8"))
+    audits = lambda: [e for e in client.api("GET", "/api/audit").json["events"] if e["action"] == "summary"]
+    # a "follow" request with nothing running is a normal request: audited
+    _, events = client.summary(doc["id"], follow=True)
+    assert events[-1]["type"] == "done" and len(audits()) == 1
+    # while an administrator re-makes the summary, polls wait for the new one (not the old cached copy)
+    monkeypatch.setenv("FAKE_LLM_SUMMARY_DELAY", "1.5")
+    worker = threading.Thread(target=lambda: client.summary(doc["id"], refresh=True))
+    worker.start()
+    time.sleep(0.5)
+    poll = Client(app)
+    poll.http.set_cookie("bankrag_session", client.http.get_cookie("bankrag_session").value)
+    poll.csrf = client.csrf
+    _, events = poll.summary(doc["id"], follow=True)
+    assert events == [{"type": "status", "stage": "waiting"}, {"type": "pending"}]
+    worker.join(30)
+    assert len(audits()) == 2  # the refresh; the poll was not logged again

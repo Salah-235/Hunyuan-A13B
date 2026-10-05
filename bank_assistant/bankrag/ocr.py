@@ -54,12 +54,23 @@ class PageRenderer:
         finally:
             page.close()
 
-    def has_image(self, number):
+    def has_image(self, number, min_share=0.4):
+        """True when images cover a large part of the page (a scan, not a small logo)."""
         import pypdfium2.raw as pdfium_c
 
-        page = self.pdf[number - 1]
         try:
-            return any(True for _ in page.get_objects(filter=[pdfium_c.FPDF_PAGEOBJ_IMAGE], max_depth=3))
+            page = self.pdf[number - 1]
+        except Exception:  # noqa: BLE001 - a page pdfium cannot load counts as no image
+            return False
+        try:
+            width, height = page.get_size()
+            area = max(width * height, 1)
+            for obj in page.get_objects(filter=[pdfium_c.FPDF_PAGEOBJ_IMAGE], max_depth=3):
+                bounds = obj.get_bounds if hasattr(obj, "get_bounds") else obj.get_pos  # pypdfium2 5 / 4
+                left, bottom, right, top = bounds()
+                if (right - left) * (top - bottom) / area >= min_share:
+                    return True
+            return False
         except Exception:  # noqa: BLE001
             return False
         finally:

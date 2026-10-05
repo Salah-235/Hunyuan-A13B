@@ -433,8 +433,8 @@ def create_app(cfg=None, start_worker=True):
         # a fresh summary costs model time: only administrators can replace the saved one
         refresh = bool(data.get("refresh")) and g.user["role"] == "admin"
         follow = bool(data.get("follow"))  # asking again while another request prepares it
-        if not follow:
-            audit("summary", doc["title"])
+        if not (follow and summarizer.following(doc["id"], lang)):
+            audit("summary", doc["title"])  # polls for a job already audited are not logged again
         return ndjson(summarizer.stream(doc, lang, refresh, follow), "summary failed")
 
     def ndjson(events, what):
