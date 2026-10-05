@@ -22,7 +22,7 @@ from .i18n import DIRECTION, LANGS, js_strings, translate
 from .indexer import Indexer
 from .ingest import SUPPORTED_EXTENSIONS
 from .llm import LLMClient
-from .rag import Answerer
+from .rag import Answerer, Summarizer
 from .search import Retriever
 
 log = logging.getLogger(__name__)
@@ -64,9 +64,11 @@ def create_app(cfg=None, start_worker=True):
     retriever = Retriever(db, llm)
     indexer = Indexer(cfg, db, llm, retriever)
     answerer = Answerer(cfg, llm, retriever)
+    summarizer = Summarizer(cfg, db, llm)
     throttle = auth.LoginThrottle(cfg.MAX_LOGIN_ATTEMPTS, cfg.LOCKOUT_MINUTES)
     app.extensions["bankrag"] = SimpleNamespace(
-        cfg=cfg, db=db, llm=llm, retriever=retriever, indexer=indexer, answerer=answerer)
+        cfg=cfg, db=db, llm=llm, retriever=retriever, indexer=indexer, answerer=answerer,
+        summarizer=summarizer)
 
     def user_count():
         return db.query_one("SELECT COUNT(*) AS n FROM users")["n"]
@@ -416,14 +418,30 @@ def create_app(cfg=None, start_worker=True):
             doc_filter = [str(d) for d in doc_filter][:5000]
             if not doc_filter:
                 return api_error("no_sources_selected")
-        audit("ask", question[:500])
+        mode = "full" if data.get("mode") == "full" else "normal"
+        audit("ask", ("[full] " if mode == "full" else "") + question[:500])
+        return ndjson(answerer.stream(question, history, doc_filter, mode), "answer failed")
 
+    @app.post("/api/documents/<doc_id>/summary")
+    @auth.login_required
+    def summarize_document(doc_id):
+        doc = db.query_one("SELECT * FROM documents WHERE id = ? AND status = 'ready'", (doc_id,))
+        if doc is None:
+            abort(404)
+        data = request.get_json(silent=True) or {}
+        lang = data.get("lang") if data.get("lang") in LANGS else g.get("lang", cfg.DEFAULT_LANG)
+        # a fresh summary costs model time: only administrators can replace the saved one
+        refresh = bool(data.get("refresh")) and g.user["role"] == "admin"
+        audit("summary", doc["title"])
+        return ndjson(summarizer.stream(doc, lang, refresh), "summary failed")
+
+    def ndjson(events, what):
         def generate():
             try:
-                for event in answerer.stream(question, history, doc_filter):
+                for event in events:
                     yield json.dumps(event, ensure_ascii=False) + "\n"
             except Exception:  # noqa: BLE001
-                log.exception("answer failed")
+                log.exception(what)
                 yield json.dumps({"type": "error", "code": "error_generic"}) + "\n"
 
         return Response(stream_with_context(generate()), mimetype="application/x-ndjson",
@@ -557,6 +575,9 @@ def create_app(cfg=None, start_worker=True):
             query_rewrite=cfg.QUERY_REWRITE,
             embedding_model=cfg.EMBEDDING_MODEL,
             top_k=cfg.TOP_K,
+            top_k_full=cfg.TOP_K_FULL,
+            ocr_engine=indexer.ocr.name if indexer.ocr else "",
+            ocr_model=cfg.OCR_VISION_MODEL if indexer.ocr and indexer.ocr.name == "vision" else "",
             documents=db.query_one("SELECT COUNT(*) AS n FROM documents WHERE status = 'ready'")["n"],
             chunks=db.query_one("SELECT COUNT(*) AS n FROM chunks")["n"],
             users=db.query_one("SELECT COUNT(*) AS n FROM users WHERE active = 1")["n"],

@@ -18,6 +18,9 @@
 | الميزة | التفاصيل |
 |---|---|
 | أنواع الملفات | PDF، Word ‏(.docx)، Excel ‏(.xlsx)، CSV، نص (.txt / .md) |
+| ملفات PDF الممسوحة ضوئياً | قراءة آلية (OCR) للصفحات التي هي صور: Tesseract على الخادم نفسه، أو نموذج رؤية أدق في الأرقام. المقاطع المقروءة آلياً تحمل شارة «OCR» وينبّه المساعد إلى التحقق من أرقامها |
+| إجابة شاملة | زر «إجابة شاملة» تحت خانة السؤال: يقرأ 24 مقطعاً بدل 8 ويجمع كل العناصر من كل المصادر — للأسئلة العامة والقوائم (كل الوثائق المطلوبة، كل الرسوم…) |
+| تلخيص وثيقة كاملة | زر التلخيص بجانب كل وثيقة: ملخص منظم للوثيقة كلها مع الأرقام وأرقام الصفحات. الوثائق الطويلة تُقرأ على أجزاء ثم تُجمع، والملخص يُحفظ فلا يُعاد حسابه |
 | دقة الإجابة | إجابة مبنية على المقاطع المسترجعة فقط، مع أرقام المصادر [1] [2]. إذا لم تكن المعلومة في الوثائق يقول ذلك صراحة ولا يخترع |
 | ملفات PDF العربية | إعادة ترتيب النص العربي حسب موضع الحروف في الصفحة، حتى تبقى الأرقام والنسب في مكانها الصحيح (مثل «المادة 3» و«30%») |
 | الجداول | صفوف جداول PDF (العربية والفرنسية) تبقى في سطر واحد بخلايا مرتبة `|`، وجداول Word تحافظ على مكان كل قيمة في عمودها حتى مع الخلايا الفارغة |
@@ -122,6 +125,29 @@ EMBEDDING_MODEL=bge-m3
 
 من لوحة الإدارة ← **النظام** يمكنك التحقق من الإعدادات والضغط على «اختبار الاتصال».
 
+### قراءة ملفات PDF الممسوحة ضوئياً (OCR)
+
+يقرأ التطبيق تلقائياً كل صفحة PDF لا تحتوي على نص (صورة ممسوحة). هناك طريقتان:
+
+1. **Tesseract** (افتراضي، على الخادم نفسه، لا تخرج الصفحات منه). ثبّته مع اللغة العربية والفرنسية:
+
+   ```bash
+   sudo apt install tesseract-ocr tesseract-ocr-ara tesseract-ocr-fra tesseract-ocr-eng   # Ubuntu / Debian
+   ```
+
+   في Windows ثبّت [Tesseract](https://github.com/UB-Mannheim/tesseract/wiki) واختر Arabic وFrench أثناء التثبيت. صورة Docker تحتوي عليه مسبقاً.
+   يحوّل التطبيق كل صفحة إلى أبيض وأسود قبل القراءة، ويقرأ الصفحة مرة ثانية لاستعادة علامات «%» التي يخطئ فيها Tesseract عادة بجانب النص العربي.
+
+2. **نموذج رؤية** (أدق في الأرقام والجداول): نموذج يقرأ الصور يعمل داخل البنك، مثل Qwen2.5-VL عبر vLLM:
+
+   ```ini
+   OCR_ENGINE=vision
+   OCR_VISION_MODEL=Qwen/Qwen2.5-VL-7B-Instruct
+   OCR_VISION_BASE_URL=http://localhost:8001/v1
+   ```
+
+بعد تثبيت OCR اضغط «إعادة المعالجة» على الوثائق الممسوحة الموجودة من قبل. لوحة الإدارة ← **النظام** تعرض طريقة القراءة المفعلة.
+
 ---
 
 ## الاستعمال على الهاتف (تطبيق جوال)
@@ -197,7 +223,7 @@ docker compose logs app                 # لرؤية رمز التهيئة
 
 ## ملاحظات مهمة عن الدقة
 
-- ملفات PDF **الممسوحة ضوئياً** (صور بلا نص) لا يمكن قراءتها، ويظهر عليها تنبيه في لوحة الإدارة. حوّلها أولاً بتقنية OCR أو استعمل النسخة النصية الأصلية.
+- ملفات PDF **الممسوحة ضوئياً** تُقرأ آلياً (OCR)، لكن القراءة الآلية قد تخطئ في بعض الأرقام والنسب (مثلاً «90%» قد تُقرأ «9090»). لذلك تظهر على هذه المقاطع شارة «OCR» وينبّه المساعد إلى مراجعة الأرقام في الصفحة الأصلية. الأفضل دائماً استعمال النسخة النصية الأصلية للملف (PDF مصدَّر من Word مثلاً).
 - الدقة النهائية تعتمد على نموذج الذكاء الاصطناعي المستعمل: النماذج الأكبر مثل Hunyuan-A13B أدق من النماذج الصغيرة.
 - يعرض التطبيق المصدر مع كل إجابة. يجب على الموظف دائماً التحقق من النص الأصلي قبل أي قرار يخص الزبون.
 
@@ -212,7 +238,7 @@ pip install pytest
 python -m pytest tests -q
 ```
 
-تشمل الاختبارات استخراج PDF عربي حقيقي، والبحث بالعربية والفرنسية، والإجابة المتدفقة، والصلاحيات، والقفل بعد المحاولات الخاطئة، وحماية CSRF. ويحتوي الملف `tests/fake_llm.py` على خادم نموذج وهمي للتجربة دون GPU:
+تشمل الاختبارات استخراج PDF عربي حقيقي، وقراءة PDF ممسوح ضوئياً (OCR)، والبحث بالعربية والفرنسية، والإجابة المتدفقة، والإجابة الشاملة، وتلخيص الوثائق، والصلاحيات، والقفل بعد المحاولات الخاطئة، وحماية CSRF. ويحتوي الملف `tests/fake_llm.py` على خادم نموذج وهمي للتجربة دون GPU:
 
 ```bash
 python tests/fake_llm.py 8001 &
@@ -231,6 +257,9 @@ LLM_BASE_URL=http://127.0.0.1:8001/v1 python manage.py run
 - Accès **confidentiel** par mot de passe ; seuls les comptes créés par l'administrateur peuvent se connecter. Journal d'activité complet.
 - Formats : PDF (y compris l'arabe, avec remise en ordre du texte bidirectionnel), Word, Excel, CSV, texte.
 - Recherche hybride (mots-clés + sémantique multilingue en option), reformulation et traduction automatique des questions.
+- **PDF scannés** : OCR automatique des pages-images (Tesseract sur le serveur, ou un modèle de vision plus précis sur les chiffres). Les extraits issus de l'OCR portent un badge « OCR » et l'assistant invite à vérifier leurs chiffres.
+- **Réponse complète** : un interrupteur sous la zone de question fait lire 24 extraits au lieu de 8, pour les listes et les questions générales.
+- **Résumé d'un document entier** : bouton à côté de chaque document ; les longs documents sont lus par parties puis combinés, et le résumé est enregistré.
 - Modèle recommandé : **Hunyuan-A13B** hébergé sur les serveurs de la banque (vLLM), ou tout serveur compatible OpenAI (Ollama…).
 
 Démarrage : `pip install -r requirements.txt`, `cp .env.example .env`, `python manage.py run`, puis ouvrez `/setup` avec le code affiché dans la console.

@@ -1,11 +1,15 @@
 """Text extraction (PDF, Word, Excel, CSV, text) and structure-aware chunking."""
 import csv
 import io
+import logging
 import re
 import unicodedata
 from dataclasses import dataclass, field
 
+from .ocr import render_pages
 from .textproc import clean_text
+
+log = logging.getLogger(__name__)
 
 SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".xlsx", ".csv", ".txt", ".md"}
 
@@ -16,6 +20,7 @@ class Unit:
     text: str
     page: int | None = None
     level: int = 0  # 0 = body text, 1 = chapter-like heading, 2 = article-like heading
+    ocr: bool = False  # machine-read from a scanned image
 
 
 @dataclass
@@ -24,6 +29,7 @@ class Chunk:
     page_start: int | None
     page_end: int | None
     heading: str = ""
+    ocr: bool = False
 
 
 @dataclass
@@ -57,12 +63,12 @@ def heading_level(line):
     return 0
 
 
-def _lines_to_units(text, page=None):
+def _lines_to_units(text, page=None, ocr=False):
     units = []
     for line in clean_text(text).split("\n"):
         line = line.strip()
         if line:
-            units.append(Unit(line, page, heading_level(line)))
+            units.append(Unit(line, page, heading_level(line), ocr))
     return units
 
 
@@ -366,7 +372,10 @@ def _pdf_lines_pypdf(data):
     return pages
 
 
-def extract_pdf(data):
+MIN_PAGE_CHARS = 30  # a page with less text than this is treated as a scanned image
+
+
+def extract_pdf(data, ocr=None, ocr_max_pages=300):
     try:
         pages = _pdf_lines_pdfminer(data)
     except Exception as exc:  # noqa: BLE001 - fall back to the simpler extractor
@@ -374,12 +383,35 @@ def extract_pdf(data):
             raise ValueError("encrypted_pdf") from exc
         pages = _pdf_lines_pypdf(data)
     result = Extraction(pages=len(pages))
+    empty = [n for n, text in enumerate(pages, start=1) if len(text.strip()) < MIN_PAGE_CHARS]
+    ocr_pages = set()
+    ocr_failed = False
+    if empty and ocr is not None:
+        failures = 0
+        try:
+            for number, image in render_pages(data, empty[:ocr_max_pages], ocr.dpi):
+                try:
+                    text = ocr.page_text(image)
+                except Exception as exc:  # noqa: BLE001 - one unreadable page must not fail the document
+                    log.warning("OCR failed on page %s: %s", number, exc)
+                    failures += 1
+                    if failures >= 3 and not ocr_pages:
+                        break  # the engine is down: do not wait for every page to time out
+                    continue
+                if len(text.strip()) >= MIN_PAGE_CHARS:
+                    pages[number - 1] = _PCT_BEFORE_NUMBER.sub(r"\2\1", text)  # "%30" -> "30%"
+                    ocr_pages.add(number)
+        except Exception as exc:  # noqa: BLE001 - page rendering failed: keep the text layer
+            log.warning("could not render PDF pages for OCR: %s", exc)
+        ocr_failed = not ocr_pages
     text_chars = 0
     for number, text in enumerate(pages, start=1):
         text_chars += len(text.strip())
-        result.units.extend(_lines_to_units(text, number))
-    if result.pages and text_chars < 30 * result.pages:
-        result.warning = "scanned_pdf"
+        result.units.extend(_lines_to_units(text, number, number in ocr_pages))
+    if ocr_pages:
+        result.warning = "ocr"
+    elif result.pages and text_chars < MIN_PAGE_CHARS * result.pages:
+        result.warning = "ocr_failed" if ocr_failed else "scanned_pdf"
     return result
 
 
@@ -515,10 +547,10 @@ def extract_text_file(data):
     return Extraction(units=_lines_to_units(decode_text(data)), pages=0)
 
 
-def extract(data, ext):
+def extract(data, ext, ocr=None, ocr_max_pages=300):
     ext = ext.lower()
     if ext == ".pdf":
-        return extract_pdf(data)
+        return extract_pdf(data, ocr, ocr_max_pages)
     if ext == ".docx":
         return extract_docx(data)
     if ext == ".xlsx":
@@ -554,7 +586,7 @@ def _split_long(unit, size):
             current = f"{current} {sentence}".strip()
     if current:
         pieces.append(current)
-    return [Unit(p, unit.page, unit.level) for p in pieces if p]
+    return [Unit(p, unit.page, unit.level, unit.ocr) for p in pieces if p]
 
 
 def chunk_units(units, size=1200, overlap=200):
@@ -586,7 +618,8 @@ def chunk_units(units, size=1200, overlap=200):
             pages = [u.page for u in current if u.page is not None]
             if len(text) >= 15:
                 chunks.append(Chunk(text, min(pages) if pages else None,
-                                    max(pages) if pages else None, chunk_heading))
+                                    max(pages) if pages else None, chunk_heading,
+                                    any(u.ocr for u in current)))
         tail = []
         if keep_overlap and overlap > 0:
             total = 0

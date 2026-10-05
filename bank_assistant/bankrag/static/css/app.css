@@ -219,6 +219,15 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .source-item input, .group-head input { width: 17px; height: 17px; margin: 3px 0 0; accent-color: var(--primary); flex: none; }
 .source-item .doc-name { font-size: .9rem; line-height: 1.4; word-break: break-word; }
 .source-item .doc-meta { font-size: .75rem; color: var(--muted); }
+.source-item .doc-text { flex: 1; min-width: 0; }
+.sum-btn {
+  flex: none; width: 30px; height: 30px; margin: -3px 0 0; display: grid; place-items: center; border: 0; border-radius: 8px;
+  background: none; color: var(--muted); cursor: pointer; opacity: .55; transition: opacity .15s, background .15s, color .15s;
+}
+.sum-btn .icon { width: 17px; height: 17px; }
+.source-item:hover .sum-btn, .sum-btn:focus-visible { opacity: 1; }
+.sum-btn:hover { background: var(--surface); color: var(--primary); opacity: 1; }
+@media (pointer: coarse) { .sum-btn { opacity: .9; } }
 .file-tag {
   display: inline-grid; place-items: center; min-width: 34px; height: 20px; padding: 0 5px; border-radius: 5px; flex: none;
   font-size: .62rem; font-weight: 800; letter-spacing: .03em; color: #fff; background: #6b7c86; margin-top: 2px; direction: ltr;
@@ -325,7 +334,34 @@ details.more-sources .source-cards { margin-top: 8px; }
 .send-btn .icon-stop { display: none; }
 .send-btn.busy .icon-send { display: none; }
 .send-btn.busy .icon-stop { display: block; }
+.composer-foot {
+  max-width: 860px; margin: 6px auto 0; display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap; justify-content: center;
+}
+.composer-foot .disclaimer { margin: 0; flex: 1 1 260px; }
+.mode-toggle { display: inline-flex; align-items: center; gap: 7px; font-size: .8rem; font-weight: 600; cursor: pointer; user-select: none; flex: none; }
+.mode-toggle input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.mode-toggle .switch {
+  width: 30px; height: 17px; border-radius: 999px; background: var(--border-strong); position: relative; transition: background .15s; flex: none;
+}
+.mode-toggle .switch::after {
+  content: ""; position: absolute; top: 2px; inset-inline-start: 2px; width: 13px; height: 13px; border-radius: 50%;
+  background: #fff; transition: inset-inline-start .15s;
+}
+.mode-toggle input:checked + .switch { background: var(--primary); }
+.mode-toggle input:checked + .switch::after { inset-inline-start: 15px; }
+.mode-toggle input:focus-visible + .switch { box-shadow: 0 0 0 3px var(--primary-ring); }
 .disclaimer { text-align: center; font-size: .74rem; color: var(--muted); margin: 6px auto 0; max-width: 860px; }
+.ocr-badge {
+  display: inline-block; font-size: .66rem; font-weight: 700; padding: 0 6px; border-radius: 999px; vertical-align: 1px;
+  background: #fdf1d6; color: #7a5300; border: 1px solid #f0d58f; cursor: help;
+}
+@media (prefers-color-scheme: dark) { .ocr-badge { background: #3a2f12; color: #f3d48a; border-color: #6b5521; } }
+.summary-head { display: flex; align-items: center; gap: 8px; margin: 0 0 2px; font-weight: 700; }
+.summary-head .icon { width: 18px; height: 18px; color: var(--primary); flex: none; }
+.summary-meta { margin: 0 0 10px; }
+.summary-meta:empty { display: none; }
+.page-ref { text-decoration: none; white-space: nowrap; }
+.page-ref:hover { text-decoration: underline; }
 
 /* ===== Admin ===== */
 .admin { flex: 1; overflow-y: auto; padding: 16px; padding-bottom: calc(24px + env(safe-area-inset-bottom)); }

@@ -6,3 +6,5 @@ pypdf>=4.2
 python-docx>=1.1
 openpyxl>=3.1
 numpy>=1.26
+pypdfium2>=4.30        # renders scanned PDF pages for OCR
+pytesseract>=0.3.10    # OCR with Tesseract (also install the tesseract program, see README)

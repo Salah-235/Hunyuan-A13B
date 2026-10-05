@@ -4,6 +4,7 @@ import queue
 import threading
 
 from .ingest import chunk_units, extract
+from .ocr import make_ocr
 from .search import to_blob
 from .textproc import search_text
 
@@ -18,6 +19,8 @@ class Indexer:
         self.retriever = retriever
         self.queue = queue.Queue()
         self.thread = None
+        self.ocr = make_ocr(cfg)
+        log.info("OCR engine: %s", self.ocr.name if self.ocr else "none")
 
     def start(self):
         if self.thread is not None:
@@ -46,6 +49,7 @@ class Indexer:
         self.db.execute(f"UPDATE documents SET {cols} WHERE id = ?", (*fields.values(), doc_id))
 
     def remove_chunks(self, doc_id, conn):
+        conn.execute("DELETE FROM summaries WHERE doc_id = ?", (doc_id,))
         conn.execute("DELETE FROM chunks_fts WHERE doc_id = ?", (doc_id,))
         conn.execute("DELETE FROM embeddings WHERE doc_id = ?", (doc_id,))
         conn.execute("DELETE FROM chunks WHERE doc_id = ?", (doc_id,))
@@ -57,7 +61,7 @@ class Indexer:
         self._set(doc_id, status="processing", error="", warning="")
         path = self.cfg.FILES_DIR / f"{doc_id}{doc['ext']}"
         try:
-            extraction = extract(path.read_bytes(), doc["ext"])
+            extraction = extract(path.read_bytes(), doc["ext"], self.ocr, self.cfg.OCR_MAX_PAGES)
         except ValueError as exc:
             self._set(doc_id, status="error", error=str(exc))
             return
@@ -75,9 +79,9 @@ class Indexer:
             chunk_ids = []
             for idx, chunk in enumerate(chunks):
                 cur = conn.execute(
-                    "INSERT INTO chunks (doc_id, idx, page_start, page_end, heading, text) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
-                    (doc_id, idx, chunk.page_start, chunk.page_end, chunk.heading, chunk.text),
+                    "INSERT INTO chunks (doc_id, idx, page_start, page_end, heading, text, ocr) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (doc_id, idx, chunk.page_start, chunk.page_end, chunk.heading, chunk.text, int(chunk.ocr)),
                 )
                 chunk_ids.append(cur.lastrowid)
                 conn.execute(

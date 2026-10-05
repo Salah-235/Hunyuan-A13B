@@ -24,9 +24,29 @@ def fake_embedding(text):
     return vector
 
 
+# what the fake vision model "reads" on any scanned page image
+VISION_TEXT = ("بطاقة الادخار الذهبية\n"
+               "المادة 1: نسبة العائد السنوي على حساب الادخار الذهبي هي 4.75% تدفع كل ثلاثة أشهر.\n"
+               "المادة 2: الحد الأدنى للإيداع الأول هو 20 000 دج.")
+
+
 def answer_for(messages):
     system = messages[0]["content"] if messages and messages[0]["role"] == "system" else ""
     user = messages[-1]["content"]
+    if isinstance(user, list):  # vision request: transcribe the page image
+        if any(part.get("type") == "image_url" for part in user):
+            return VISION_TEXT
+        user = " ".join(part.get("text", "") for part in user)
+    if "You take notes on part" in system:
+        part = re.search(r"part (\d+) of (\d+)", system)
+        first = next((line for line in user.split("\n\n", 1)[-1].splitlines()
+                      if line.strip() and not line.startswith("[")), "")
+        return f"- ملاحظات الجزء {part.group(1)}: {first.strip()[:80]} (p. 1)"
+    if "You summarise one internal bank document" in system:
+        body = user.split(":\n", 1)[-1]
+        lines = [line for line in body.splitlines() if line.strip() and not line.startswith("[")]
+        note = " OCR-NOTE" if "machine-read (OCR)" in system else ""
+        return "نظرة عامة: " + (lines[0].strip() if lines else "") + f" (p. 1){note}\n\n- عدد الأسطر: {len(lines)}"
     if "search queries" in system:
         question = user.split("Latest question:", 1)[-1].strip()
         return f"{question}\n{question} (traduction)\nmots clés"

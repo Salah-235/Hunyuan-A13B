@@ -38,7 +38,8 @@
   }
   function I18N_KEY(code) {
     const map = {
-      scanned_pdf: "warn_scanned_pdf", embedding_failed: "warn_embedding_failed", no_text: "err_no_text",
+      scanned_pdf: "warn_scanned_pdf", ocr: "warn_ocr", ocr_failed: "warn_ocr_failed",
+      embedding_failed: "warn_embedding_failed", no_text: "err_no_text",
       encrypted_pdf: "err_encrypted_pdf", unsupported_type: "err_unsupported_type",
     };
     return map[code];
@@ -362,7 +363,9 @@
       <dt>${escapeHtml(t("model"))}</dt><dd dir="ltr">${escapeHtml(info.llm_model)}</dd>
       <dt>${escapeHtml(t("thinking_mode"))}</dt><dd>${onOff(info.thinking)}</dd>
       <dt>${escapeHtml(t("query_rewrite"))}</dt><dd>${onOff(info.query_rewrite)}</dd>
-      <dt>${escapeHtml(t("embeddings"))}</dt><dd>${info.embedding_model ? `<span class="ok" dir="ltr">${escapeHtml(info.embedding_model)}</span>` : onOff(false)}</dd>`;
+      <dt>${escapeHtml(t("embeddings"))}</dt><dd>${info.embedding_model ? `<span class="ok" dir="ltr">${escapeHtml(info.embedding_model)}</span>` : onOff(false)}</dd>
+      <dt>${escapeHtml(t("ocr_engine"))}</dt><dd>${info.ocr_engine === "tesseract" ? `<span class="ok">${escapeHtml(t("ocr_tesseract"))}</span>`
+        : info.ocr_engine === "vision" ? `<span class="ok">${escapeHtml(t("ocr_vision", { model: info.ocr_model || "" }))}</span>` : onOff(false)}</dd>`;
   }
   loaders.system = loadSystem;
 

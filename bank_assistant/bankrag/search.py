@@ -107,7 +107,7 @@ class Retriever:
             return []
         ids = [chunk_id for chunk_id, _ in best]
         rows = self.db.query(
-            "SELECT c.id, c.doc_id, c.idx, c.page_start, c.page_end, c.heading, c.text, "
+            "SELECT c.id, c.doc_id, c.idx, c.page_start, c.page_end, c.heading, c.text, c.ocr, "
             "d.title, d.ext, d.category FROM chunks c JOIN documents d ON d.id = c.doc_id "
             "WHERE c.id IN (%s) AND d.status = 'ready'" % ",".join("?" * len(ids)),
             ids,

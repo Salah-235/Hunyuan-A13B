@@ -18,9 +18,12 @@
     form: document.getElementById("composer"),
     input: document.getElementById("question"),
     send: document.getElementById("send-btn"),
+    modeFull: document.getElementById("mode-full"),
   };
 
   const STORE_KEY = "bankrag.deselected";
+  const MODE_KEY = "bankrag.mode";
+  const IS_ADMIN = document.querySelector(".chat").dataset.admin === "1";
   let docs = [];
   let deselected = new Set(loadDeselected());
   let history = [];
@@ -33,6 +36,10 @@
   function saveDeselected() {
     try { localStorage.setItem(STORE_KEY, JSON.stringify([...deselected])); } catch (e) { /* private mode */ }
   }
+  try { els.modeFull.checked = localStorage.getItem(MODE_KEY) === "full"; } catch (e) { /* private mode */ }
+  els.modeFull.addEventListener("change", () => {
+    try { localStorage.setItem(MODE_KEY, els.modeFull.checked ? "full" : "normal"); } catch (e) { /* private mode */ }
+  });
 
   // ------------------------------------------------------------------ sources panel
 
@@ -89,7 +96,9 @@
             <label class="source-item">
               <input type="checkbox" data-doc="${escapeHtml(doc.id)}" ${deselected.has(doc.id) ? "" : "checked"}>
               ${fileTag(doc.ext)}
-              <span><span class="doc-name">${escapeHtml(doc.title)}</span><br><span class="doc-meta">${escapeHtml(docMeta(doc))}</span></span>
+              <span class="doc-text"><span class="doc-name">${escapeHtml(doc.title)}</span><br><span class="doc-meta">${escapeHtml(docMeta(doc))}</span></span>
+              <button type="button" class="sum-btn" data-summarize="${escapeHtml(doc.id)}" title="${escapeHtml(t("summarize_doc"))}"
+                aria-label="${escapeHtml(t("summarize_doc") + " — " + doc.title)}"><svg class="icon"><use href="#i-summary"/></svg></button>
             </label>`).join("")}
         </div>`;
       }).join("");
@@ -109,6 +118,15 @@
     }
     saveDeselected();
     renderSources();
+  });
+  els.list.addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-summarize]");
+    if (!btn) return;
+    event.preventDefault();  // do not toggle the checkbox of the surrounding label
+    const doc = docs.find((d) => d.id === btn.dataset.summarize);
+    if (!doc || busy) return;
+    setPanel(false);
+    summarize(doc, false);
   });
   els.filter.addEventListener("input", renderSources);
   document.getElementById("select-all").addEventListener("click", () => {
@@ -254,7 +272,8 @@
         <span class="sc-num">${src.n}</span>
         <div>
           <div class="sc-title" dir="auto">${escapeHtml(src.title)}</div>
-          <div class="sc-loc">${escapeHtml([loc, src.heading].filter(Boolean).join(" · "))}</div>
+          <div class="sc-loc">${escapeHtml([loc, src.heading].filter(Boolean).join(" · "))}${src.ocr
+            ? ` <span class="ocr-badge" title="${escapeHtml(t("ocr_hint"))}">${escapeHtml(t("ocr_badge"))}</span>` : ""}</div>
         </div>
       </div>
       <div class="sc-text" dir="auto">${escapeHtml(src.text)}</div>
@@ -304,6 +323,28 @@
 
   // ------------------------------------------------------------------ asking
 
+  async function readEvents(response, onEvent) {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let nl;
+      while ((nl = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, nl).trim();
+        buffer = buffer.slice(nl + 1);
+        if (!line) continue;
+        let ev;
+        try { ev = JSON.parse(line); } catch (e) { continue; }
+        onEvent(ev);
+      }
+    }
+  }
+
+  const errorKey = (code) => ({ llm_unavailable: "error_llm", error_empty: "error_empty" }[code] || "error_generic");
+
   function setBusy(value) {
     busy = value;
     els.send.classList.toggle("busy", value);
@@ -351,37 +392,23 @@
         question,
         history: history.slice(-8),
         doc_ids: selectedIds.length === docs.length ? null : selectedIds,
+        mode: els.modeFull.checked ? "full" : "normal",
       }, { raw: true, signal: controller.signal });
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        let nl;
-        while ((nl = buffer.indexOf("\n")) >= 0) {
-          const line = buffer.slice(0, nl).trim();
-          buffer = buffer.slice(nl + 1);
-          if (!line) continue;
-          let ev;
-          try { ev = JSON.parse(line); } catch (e) { continue; }
-          if (ev.type === "status") {
-            view.stage.textContent = t("stage_" + ev.stage);
-          } else if (ev.type === "sources") {
-            sources = ev.sources || [];
-          } else if (ev.type === "delta") {
-            if (!answer) view.status.classList.add("hidden");
-            answer += ev.text;
-            schedule();
-          } else if (ev.type === "error") {
-            failed = true;
-            view.answer.classList.add("error");
-            const code = { llm_unavailable: "error_llm", error_empty: "error_empty" }[ev.code] || "error_generic";
-            answer = (answer ? answer + "\n\n" : "") + t(code);
-          }
+      await readEvents(response, (ev) => {
+        if (ev.type === "status") {
+          view.stage.textContent = t("stage_" + ev.stage);
+        } else if (ev.type === "sources") {
+          sources = ev.sources || [];
+        } else if (ev.type === "delta") {
+          if (!answer) view.status.classList.add("hidden");
+          answer += ev.text;
+          schedule();
+        } else if (ev.type === "error") {
+          failed = true;
+          view.answer.classList.add("error");
+          answer = (answer ? answer + "\n\n" : "") + t(errorKey(ev.code));
         }
-      }
+      });
     } catch (err) {
       failed = true;
       if (err.name === "AbortError") {
@@ -405,6 +432,108 @@
         history.push({ role: "user", content: question }, { role: "assistant", content: answer });
         history = history.slice(-12);
       }
+      setBusy(false);
+      scrollToBottom(false);
+    }
+  }
+
+  // ------------------------------------------------------------------ document summary
+
+  const PAGE_REF = /\((?:p\.?|pp\.?|page|ص\.?|صفحة)\s*([\d٠-٩]+)(?:\s*[-–]\s*[\d٠-٩]+)?\)/gi;
+
+  function renderSummary(text, doc) {
+    let html = renderMarkdown(text, 0);
+    if (doc.ext === ".pdf") {
+      // turn "(p. 3)" / "(ص 3)" into links that open the PDF on that page
+      html = html.replace(PAGE_REF, (match, page) =>
+        `<a class="page-ref" href="/files/${encodeURIComponent(doc.id)}#page=${toLatin(page)}" target="_blank" rel="noopener">${match}</a>`);
+    }
+    return html;
+  }
+
+  async function summarize(doc, refresh, view) {
+    els.empty.classList.add("hidden");
+    if (!view) {
+      view = addBotMessage();
+      view.root.classList.add("msg-summary");
+      view.answer.insertAdjacentHTML("beforebegin", `<p class="summary-head" dir="auto"><svg class="icon"><use href="#i-summary"/></svg>
+        ${escapeHtml(t("summary_title", { title: doc.title }))}</p><p class="summary-meta muted small" data-role="meta"></p>`);
+    } else {
+      view.status.classList.remove("hidden");
+      view.tools.classList.add("hidden");
+      view.answer.classList.remove("error");
+      view.answer.innerHTML = "";
+    }
+    const meta = view.root.querySelector('[data-role="meta"]');
+    meta.textContent = "";
+    view.stage.textContent = t("stage_summarizing");
+    scrollToBottom(true);
+    setBusy(true);
+    controller = new AbortController();
+    let text = "";
+    let cachedAt = null;
+    let pending = false;
+    let finished = false;
+    const render = () => {
+      pending = false;
+      if (finished) return;
+      view.answer.innerHTML = renderSummary(text, doc);
+      view.answer.classList.add("caret");
+      scrollToBottom(false);
+    };
+    const schedule = () => { if (!pending) { pending = true; requestAnimationFrame(render); } };
+    try {
+      const response = await api("POST", `/api/documents/${encodeURIComponent(doc.id)}/summary`,
+        { lang: window.App.LANG, refresh: !!refresh }, { raw: true, signal: controller.signal });
+      await readEvents(response, (ev) => {
+        if (ev.type === "status") {
+          view.stage.textContent = ev.stage === "reading"
+            ? t("stage_reading", { part: ev.part, parts: ev.parts }) : t("stage_" + ev.stage);
+        } else if (ev.type === "summary") {
+          cachedAt = ev.cached ? ev.created_at : null;
+        } else if (ev.type === "delta") {
+          if (!text) view.status.classList.add("hidden");
+          text += ev.text;
+          schedule();
+        } else if (ev.type === "error") {
+          view.answer.classList.add("error");
+          text = (text ? text + "\n\n" : "") + t(errorKey(ev.code));
+        }
+      });
+    } catch (err) {
+      if (err.name === "AbortError") {
+        text = (text ? text + "\n\n" : "") + t("stopped");
+      } else {
+        view.answer.classList.add("error");
+        text = (text ? text + "\n\n" : "") + (err.message || t("error_generic"));
+      }
+    } finally {
+      finished = true;
+      controller = null;
+      view.status.classList.add("hidden");
+      view.answer.classList.remove("caret");
+      view.answer.innerHTML = renderSummary(text, doc);
+      const ok = text && !view.answer.classList.contains("error");
+      meta.textContent = ok ? (cachedAt ? t("summary_cached", { date: window.App.formatDate(cachedAt) }) + " · " : "") + t("summary_note") : "";
+      view.tools.innerHTML = "";
+      if (ok) {
+        const copy = document.createElement("button");
+        copy.type = "button";
+        copy.className = "btn btn-ghost btn-sm";
+        copy.innerHTML = `<svg class="icon"><use href="#i-copy"/></svg>${escapeHtml(t("copy"))}`;
+        copy.addEventListener("click", () => copyText(text));
+        view.tools.appendChild(copy);
+      }
+      if (IS_ADMIN || !ok) {
+        // employees may retry a failed summary; replacing a saved one is for administrators
+        const again = document.createElement("button");
+        again.type = "button";
+        again.className = "btn btn-ghost btn-sm";
+        again.innerHTML = `<svg class="icon"><use href="#i-refresh"/></svg>${escapeHtml(t(ok ? "summary_refresh" : "retry"))}`;
+        again.addEventListener("click", () => { if (!busy) summarize(doc, ok, view); });
+        view.tools.appendChild(again);
+      }
+      view.tools.classList.toggle("hidden", !view.tools.children.length);
       setBusy(false);
       scrollToBottom(false);
     }

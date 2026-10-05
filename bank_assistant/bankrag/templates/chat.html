@@ -29,12 +29,12 @@
     </aside>
     <div class="backdrop" id="backdrop"></div>
 
-    <main class="chat">
+    <main class="chat" data-admin="{{ 1 if user.role == 'admin' else 0 }}">
       <div class="messages" id="messages" aria-live="polite">
         <div class="empty-state" id="empty-state">
           <svg class="logo logo-xl"><use href="#i-logo"/></svg>
           <h1 id="empty-title">{{ t('empty_chat_title') }}</h1>
-          <p class="muted" id="empty-text">{{ t('empty_chat_text') }}</p>
+          <p class="muted" id="empty-text">{{ t('empty_chat_text') }}<br><span class="small">{{ t('empty_chat_tips') }}</span></p>
           <div class="examples" id="examples">
             <button type="button" class="chip">{{ t('example_1') }}</button>
             <button type="button" class="chip">{{ t('example_2') }}</button>
@@ -57,7 +57,14 @@
             <svg class="icon icon-stop"><use href="#i-stop"/></svg>
           </button>
         </div>
-        <p class="disclaimer">{{ t('disclaimer') }}</p>
+        <div class="composer-foot">
+          <label class="mode-toggle" title="{{ t('mode_full_hint') }}">
+            <input type="checkbox" id="mode-full">
+            <span class="switch" aria-hidden="true"></span>
+            <span>{{ t('mode_full') }}</span>
+          </label>
+          <p class="disclaimer">{{ t('disclaimer') }}</p>
+        </div>
       </form>
     </main>
   </div>

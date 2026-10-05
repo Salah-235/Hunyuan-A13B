@@ -27,7 +27,7 @@ def llm_server():
 def make_config(tmp_path, llm_url, **overrides):
     values = dict(DATA_DIR=str(tmp_path / "data"), LLM_BASE_URL=llm_url, LLM_MODEL="fake-hunyuan",
                   LLM_NO_THINK_PREFIX="/no_think", LLM_EXTRA_BODY={}, EMBEDDING_MODEL="",
-                  SECRET_KEY="test-secret", CHUNK_SIZE=700, CHUNK_OVERLAP=120)
+                  SECRET_KEY="test-secret", CHUNK_SIZE=700, CHUNK_OVERLAP=120, OCR_ENGINE="off")
     values.update(overrides)
     return Config(**values)
 
@@ -79,11 +79,20 @@ class Client:
                               data={"files": (io.BytesIO(data), name), "category": category},
                               content_type="multipart/form-data")
 
-    def ask(self, question, history=None, doc_ids=None):
-        response = self.api("POST", "/api/ask", {"question": question, "history": history or [],
-                                                 "doc_ids": doc_ids})
-        events = [json.loads(line) for line in response.get_data(as_text=True).splitlines() if line.strip()]
-        return response, events
+    def ask(self, question, history=None, doc_ids=None, mode=None):
+        payload = {"question": question, "history": history or [], "doc_ids": doc_ids}
+        if mode:
+            payload["mode"] = mode
+        return self.events(self.api("POST", "/api/ask", payload))
+
+    def summary(self, doc_id, lang="ar", refresh=False):
+        return self.events(self.api("POST", f"/api/documents/{doc_id}/summary", {"lang": lang, "refresh": refresh}))
+
+    @staticmethod
+    def events(response):
+        if response.status_code != 200:
+            return response, []
+        return response, [json.loads(line) for line in response.get_data(as_text=True).splitlines() if line.strip()]
 
 
 def create_admin(app, username="admin", password="admin-pass-123"):

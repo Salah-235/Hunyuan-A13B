@@ -72,6 +72,18 @@ class Config:
         self.CHUNK_SIZE = _int("CHUNK_SIZE", 1200)
         self.CHUNK_OVERLAP = _int("CHUNK_OVERLAP", 200)
         self.TOP_K = _int("TOP_K", 8)
+        self.TOP_K_FULL = _int("TOP_K_FULL", 24)          # "comprehensive answer" mode
+        self.SUMMARY_PART_CHARS = _int("SUMMARY_PART_CHARS", 40000)
+
+        # --- OCR for scanned PDF pages: auto | tesseract | vision | off ---
+        self.OCR_ENGINE = env("OCR_ENGINE") or "auto"
+        self.OCR_LANGS = env("OCR_LANGS") or "ara+fra"
+        self.OCR_PSM = _int("OCR_PSM", 6)  # 6 = one block of text (best for tables), 3 = automatic layout
+        self.OCR_DPI = _int("OCR_DPI", 300)
+        self.OCR_MAX_PAGES = _int("OCR_MAX_PAGES", 300)
+        self.OCR_VISION_MODEL = env("OCR_VISION_MODEL") or ""
+        self.OCR_VISION_BASE_URL = (env("OCR_VISION_BASE_URL") or "").rstrip("/")
+        self.OCR_VISION_API_KEY = env("OCR_VISION_API_KEY") or ""
         self.QUERY_REWRITE = _bool("QUERY_REWRITE", True)
         self.HISTORY_TURNS = _int("HISTORY_TURNS", 4)
 
@@ -94,6 +106,10 @@ class Config:
             self.EMBEDDING_BASE_URL = self.LLM_BASE_URL.rstrip("/")
         if not env("EMBEDDING_API_KEY") and "EMBEDDING_API_KEY" not in overrides:
             self.EMBEDDING_API_KEY = self.LLM_API_KEY
+        if not self.OCR_VISION_BASE_URL:
+            self.OCR_VISION_BASE_URL = self.LLM_BASE_URL.rstrip("/")
+        if not self.OCR_VISION_API_KEY:
+            self.OCR_VISION_API_KEY = self.LLM_API_KEY
 
         if isinstance(self.DATA_DIR, str):
             self.DATA_DIR = Path(self.DATA_DIR)

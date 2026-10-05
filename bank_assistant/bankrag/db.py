@@ -40,7 +40,8 @@ CREATE TABLE IF NOT EXISTS chunks (
     page_start INTEGER,
     page_end INTEGER,
     heading TEXT NOT NULL DEFAULT '',
-    text TEXT NOT NULL
+    text TEXT NOT NULL,
+    ocr INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS chunks_doc ON chunks(doc_id, idx);
 
@@ -57,6 +58,15 @@ CREATE TABLE IF NOT EXISTS embeddings (
     vector BLOB NOT NULL
 );
 CREATE INDEX IF NOT EXISTS embeddings_doc ON embeddings(doc_id);
+
+CREATE TABLE IF NOT EXISTS summaries (
+    doc_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    lang TEXT NOT NULL,
+    text TEXT NOT NULL,
+    model TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (doc_id, lang)
+);
 
 CREATE TABLE IF NOT EXISTS audit_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -95,6 +105,10 @@ class Database:
     def init_schema(self):
         conn = self.connect()
         conn.executescript(SCHEMA)
+        # databases created by earlier versions
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(chunks)")}
+        if "ocr" not in columns:
+            conn.execute("ALTER TABLE chunks ADD COLUMN ocr INTEGER NOT NULL DEFAULT 0")
         conn.commit()
 
     def execute(self, sql, params=()):
