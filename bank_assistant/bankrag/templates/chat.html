@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% set page = 'chat' %}
+{% block body_class %}chat-page{% endblock %}
+{% block body %}
+<div class="app">
+  {% include "_header.html" %}
+  <div class="layout">
+    <aside class="sidebar" id="sources-panel" aria-label="{{ t('sources') }}">
+      <div class="sidebar-head">
+        <h2><svg class="icon"><use href="#i-docs"/></svg>{{ t('sources') }}</h2>
+        <button class="icon-btn only-mobile" id="close-sources" type="button" aria-label="{{ t('close') }}"><svg class="icon"><use href="#i-close"/></svg></button>
+      </div>
+      <div class="sidebar-tools">
+        <input type="search" id="source-filter" class="input" placeholder="{{ t('search_sources') }}">
+        <div class="sel-row">
+          <span id="sel-count" class="muted small"></span>
+          <span class="sel-actions">
+            <button type="button" class="link-btn" id="select-all">{{ t('select_all') }}</button>
+            <button type="button" class="link-btn" id="select-none">{{ t('select_none') }}</button>
+          </span>
+        </div>
+      </div>
+      <div id="source-list" class="source-list"><p class="muted small pad">{{ t('loading') }}</p></div>
+      {% if user.role == 'admin' %}
+      <div class="sidebar-foot">
+        <a class="btn btn-outline btn-block" href="/admin"><svg class="icon"><use href="#i-upload"/></svg>{{ t('add_documents') }}</a>
+      </div>
+      {% endif %}
+    </aside>
+    <div class="backdrop" id="backdrop"></div>
+
+    <main class="chat" data-admin="{{ 1 if user.role == 'admin' else 0 }}">
+      <div class="messages" id="messages" aria-live="polite">
+        <div class="empty-state" id="empty-state">
+          <svg class="logo logo-xl"><use href="#i-logo"/></svg>
+          <h1 id="empty-title">{{ t('empty_chat_title') }}</h1>
+          <p class="muted" id="empty-text">{{ t('empty_chat_text') }}<br><span class="small">{{ t('empty_chat_tips') }}</span></p>
+          <div class="examples" id="examples">
+            <button type="button" class="chip">{{ t('example_1') }}</button>
+            <button type="button" class="chip">{{ t('example_2') }}</button>
+            <button type="button" class="chip">{{ t('example_3') }}</button>
+          </div>
+          <div class="no-docs hidden" id="no-docs">
+            <h1>{{ t('no_documents_title') }}</h1>
+            <p class="muted">{{ t('no_documents_admin') if user.role == 'admin' else t('no_documents_user') }}</p>
+            {% if user.role == 'admin' %}
+            <a class="btn btn-primary" href="/admin"><svg class="icon"><use href="#i-upload"/></svg>{{ t('add_documents') }}</a>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      <form class="composer" id="composer" autocomplete="off">
+        <div class="composer-box">
+          <textarea id="question" rows="1" maxlength="2000" placeholder="{{ t('ask_placeholder') }}" aria-label="{{ t('ask_placeholder') }}"></textarea>
+          <button type="submit" class="send-btn" id="send-btn" aria-label="{{ t('send') }}" title="{{ t('send') }}">
+            <svg class="icon icon-send"><use href="#i-send"/></svg>
+            <svg class="icon icon-stop"><use href="#i-stop"/></svg>
+          </button>
+        </div>
+        <div class="composer-foot">
+          <label class="mode-toggle" title="{{ t('mode_full_hint') }}">
+            <input type="checkbox" id="mode-full">
+            <span class="switch" aria-hidden="true"></span>
+            <span>{{ t('mode_full') }}</span>
+          </label>
+          <p class="disclaimer">{{ t('disclaimer') }}</p>
+        </div>
+      </form>
+    </main>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="/static/js/chat.js?v={{ asset_version }}"></script>{% endblock %}

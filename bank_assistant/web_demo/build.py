@@ -1,0 +1,7 @@
+t = open('template.html', encoding='utf-8').read()
+logo = open('logo.svg', encoding='utf-8').read()
+t = t.replace('<!--LOGO-->', logo)
+t = t.replace('/*CORE*/', open('core.js', encoding='utf-8').read().replace('if (typeof module !== "undefined") module.exports = Core;', ''))
+t = t.replace('/*APP*/', open('app.js', encoding='utf-8').read())
+open('bank-assistant.html', 'w', encoding='utf-8').write(t)
+print(len(t.encode()), 'bytes')

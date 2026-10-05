@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}{{ t('setup_title') }} — {{ app_name }}{% endblock %}
+{% block body_class %}auth-page{% endblock %}
+{% block body %}
+<main class="auth-wrap">
+  <div class="auth-top">{% include "_topbar_lang.html" %}</div>
+  <section class="auth-card">
+    <div class="brand brand-lg">
+      <svg class="logo"><use href="#i-logo"/></svg>
+      <div>
+        <h1>{{ t('setup_title') }}</h1>
+        <p class="muted">{{ t('setup_text') }}</p>
+      </div>
+    </div>
+    <form method="post" class="form" novalidate>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {% if error %}<div class="alert alert-error" role="alert">{{ t(error) }}</div>{% endif %}
+      <label class="field">
+        <span>{{ t('setup_code') }}</span>
+        <input name="code" value="{{ form.get('code', '') }}" dir="ltr" autocomplete="off" autocapitalize="characters" placeholder="XXXX-XXXX-XXXX" required>
+      </label>
+      <label class="field">
+        <span>{{ t('display_name') }}</span>
+        <input name="display_name" value="{{ form.get('display_name', '') }}" autocomplete="name">
+      </label>
+      <label class="field">
+        <span>{{ t('username') }}</span>
+        <input name="username" value="{{ form.get('username', '') }}" dir="ltr" autocomplete="username" autocapitalize="none" required>
+      </label>
+      <label class="field">
+        <span>{{ t('password') }}</span>
+        <input name="password" type="password" dir="ltr" autocomplete="new-password" minlength="8" required>
+      </label>
+      <label class="field">
+        <span>{{ t('confirm_password') }}</span>
+        <input name="confirm" type="password" dir="ltr" autocomplete="new-password" minlength="8" required>
+      </label>
+      <button class="btn btn-primary btn-block" type="submit">{{ t('setup_button') }}</button>
+    </form>
+  </section>
+</main>
+{% endblock %}

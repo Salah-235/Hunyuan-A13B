@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block body_class %}auth-page{% endblock %}
+{% block body %}
+<main class="auth-wrap">
+  <section class="auth-card center">
+    <svg class="logo logo-xl"><use href="#i-logo"/></svg>
+    <h1>{{ message }}</h1>
+    <a class="btn btn-primary" href="/">{{ t('back_to_chat') }}</a>
+  </section>
+</main>
+{% endblock %}
