@@ -1,6 +1,6 @@
 FROM python:3.12-slim
 
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 DATA_DIR=/data
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 DATA_DIR=/data OMP_THREAD_LIMIT=1
 WORKDIR /app
 # Tesseract OCR with Arabic, French and English data, for scanned PDF pages
 RUN apt-get update && apt-get install -y --no-install-recommends \

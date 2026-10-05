@@ -93,13 +93,15 @@
             <span class="badge">${items.length}</span>
           </label>
           ${items.map((doc) => `
-            <label class="source-item">
-              <input type="checkbox" data-doc="${escapeHtml(doc.id)}" ${deselected.has(doc.id) ? "" : "checked"}>
-              ${fileTag(doc.ext)}
-              <span class="doc-text"><span class="doc-name">${escapeHtml(doc.title)}</span><br><span class="doc-meta">${escapeHtml(docMeta(doc))}</span></span>
+            <div class="source-row">
+              <label class="source-item">
+                <input type="checkbox" data-doc="${escapeHtml(doc.id)}" ${deselected.has(doc.id) ? "" : "checked"}>
+                ${fileTag(doc.ext)}
+                <span class="doc-text"><span class="doc-name">${escapeHtml(doc.title)}</span><br><span class="doc-meta">${escapeHtml(docMeta(doc))}</span></span>
+              </label>
               <button type="button" class="sum-btn" data-summarize="${escapeHtml(doc.id)}" title="${escapeHtml(t("summarize_doc"))}"
                 aria-label="${escapeHtml(t("summarize_doc") + " — " + doc.title)}"><svg class="icon"><use href="#i-summary"/></svg></button>
-            </label>`).join("")}
+            </div>`).join("")}
         </div>`;
       }).join("");
       els.list.querySelectorAll("[data-indeterminate]").forEach((cb) => { cb.indeterminate = true; });
@@ -122,7 +124,6 @@
   els.list.addEventListener("click", (event) => {
     const btn = event.target.closest("[data-summarize]");
     if (!btn) return;
-    event.preventDefault();  // do not toggle the checkbox of the surrounding label
     const doc = docs.find((d) => d.id === btn.dataset.summarize);
     if (!doc || busy) return;
     setPanel(false);
@@ -343,7 +344,9 @@
     }
   }
 
-  const errorKey = (code) => ({ llm_unavailable: "error_llm", error_empty: "error_empty" }[code] || "error_generic");
+  const ERROR_KEYS = { llm_unavailable: "error_llm", error_empty: "error_empty", summary_busy: "summary_busy",
+    summary_failed: "summary_failed", summary_too_long: "summary_too_long" };
+  const errorKey = (code) => ERROR_KEYS[code] || "error_generic";
 
   function setBusy(value) {
     busy = value;
@@ -452,12 +455,13 @@
   }
 
   async function summarize(doc, refresh, view) {
+    const reuse = Boolean(view);
     els.empty.classList.add("hidden");
     if (!view) {
       view = addBotMessage();
       view.root.classList.add("msg-summary");
       view.answer.insertAdjacentHTML("beforebegin", `<p class="summary-head" dir="auto"><svg class="icon"><use href="#i-summary"/></svg>
-        ${escapeHtml(t("summary_title", { title: doc.title }))}</p><p class="summary-meta muted small" data-role="meta"></p>`);
+        <span class="summary-title">${escapeHtml(t("summary_title", { title: doc.title }))}</span></p><p class="summary-meta muted small" data-role="meta"></p>`);
     } else {
       view.status.classList.remove("hidden");
       view.tools.classList.add("hidden");
@@ -466,12 +470,17 @@
     }
     const meta = view.root.querySelector('[data-role="meta"]');
     meta.textContent = "";
+    meta.classList.remove("warn");
     view.stage.textContent = t("stage_summarizing");
-    scrollToBottom(true);
+    // a new summary follows the end of the chat; redoing an older one keeps it in view
+    const follow = !reuse;
+    if (follow) scrollToBottom(true);
+    else view.root.scrollIntoView({ block: "nearest" });
     setBusy(true);
     controller = new AbortController();
     let text = "";
     let cachedAt = null;
+    let warning = "";
     let pending = false;
     let finished = false;
     const render = () => {
@@ -479,7 +488,7 @@
       if (finished) return;
       view.answer.innerHTML = renderSummary(text, doc);
       view.answer.classList.add("caret");
-      scrollToBottom(false);
+      if (follow) scrollToBottom(false);
     };
     const schedule = () => { if (!pending) { pending = true; requestAnimationFrame(render); } };
     try {
@@ -491,6 +500,8 @@
             ? t("stage_reading", { part: ev.part, parts: ev.parts }) : t("stage_" + ev.stage);
         } else if (ev.type === "summary") {
           cachedAt = ev.cached ? ev.created_at : null;
+        } else if (ev.type === "warning") {
+          warning = ev.code;
         } else if (ev.type === "delta") {
           if (!text) view.status.classList.add("hidden");
           text += ev.text;
@@ -506,6 +517,7 @@
       } else {
         view.answer.classList.add("error");
         text = (text ? text + "\n\n" : "") + (err.message || t("error_generic"));
+        if (err.code === "not_found") loadDocs();  // deleted or being re-processed meanwhile
       }
     } finally {
       finished = true;
@@ -514,7 +526,12 @@
       view.answer.classList.remove("caret");
       view.answer.innerHTML = renderSummary(text, doc);
       const ok = text && !view.answer.classList.contains("error");
-      meta.textContent = ok ? (cachedAt ? t("summary_cached", { date: window.App.formatDate(cachedAt) }) + " · " : "") + t("summary_note") : "";
+      if (ok && warning) {
+        meta.textContent = "⚠ " + t(warning);  // shown but not saved: anyone can try again
+        meta.classList.add("warn");
+      } else {
+        meta.textContent = ok ? (cachedAt ? t("summary_cached", { date: window.App.formatDate(cachedAt) }) + " · " : "") + t("summary_note") : "";
+      }
       view.tools.innerHTML = "";
       if (ok) {
         const copy = document.createElement("button");
@@ -524,18 +541,18 @@
         copy.addEventListener("click", () => copyText(text));
         view.tools.appendChild(copy);
       }
-      if (IS_ADMIN || !ok) {
-        // employees may retry a failed summary; replacing a saved one is for administrators
+      if (IS_ADMIN || !ok || warning) {
+        // employees may retry a failed or unsaved summary; replacing a saved one is for administrators
         const again = document.createElement("button");
         again.type = "button";
         again.className = "btn btn-ghost btn-sm";
-        again.innerHTML = `<svg class="icon"><use href="#i-refresh"/></svg>${escapeHtml(t(ok ? "summary_refresh" : "retry"))}`;
-        again.addEventListener("click", () => { if (!busy) summarize(doc, ok, view); });
+        again.innerHTML = `<svg class="icon"><use href="#i-refresh"/></svg>${escapeHtml(t(ok && !warning ? "summary_refresh" : "retry"))}`;
+        again.addEventListener("click", () => { if (!busy) summarize(doc, ok && !warning, view); });
         view.tools.appendChild(again);
       }
       view.tools.classList.toggle("hidden", !view.tools.children.length);
       setBusy(false);
-      scrollToBottom(false);
+      if (follow) scrollToBottom(false);
     }
   }
 

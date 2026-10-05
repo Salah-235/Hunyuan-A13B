@@ -75,6 +75,7 @@ class ThinkFilter:
 
 def strip_thinking(text):
     text = re.sub(r"<think>.*?</think>", "", text or "", flags=re.DOTALL)
+    text = re.sub(r"<think>.*$", "", text, flags=re.DOTALL)  # cut off while still reasoning
     match = re.search(r"<answer>(.*?)(</answer>|$)", text, flags=re.DOTALL)
     if match:
         text = match.group(1)
@@ -122,19 +123,25 @@ class LLMClient:
             raise LLMError(f"HTTP {response.status_code}: {detail}")
         return response
 
-    def chat(self, messages, max_tokens=None, temperature=None, thinking=None):
+    def chat(self, messages, max_tokens=None, temperature=None, thinking=None, info=None):
+        """The answer text. `info`, if given, receives {"finish": finish_reason} ("length" = cut off)."""
         thinking = self.cfg.LLM_THINKING if thinking is None else thinking
         payload = self._payload(messages, max_tokens, temperature, thinking, stream=False)
         response = self._post(self.cfg.LLM_BASE_URL + "/chat/completions", payload,
                               self.cfg.LLM_API_KEY, stream=False)
         try:
-            content = response.json()["choices"][0]["message"].get("content") or ""
-        except (ValueError, KeyError, IndexError) as exc:
+            choice = response.json()["choices"][0]
+            content = choice["message"].get("content") or ""
+        except (ValueError, KeyError, IndexError, TypeError) as exc:
             raise LLMError("bad response") from exc
+        if info is not None:
+            info["finish"] = choice.get("finish_reason")
         return strip_thinking(content)
 
-    def stream_chat(self, messages, max_tokens=None, temperature=None, thinking=None):
-        """Yields ("thinking", None) while the model reasons, then ("delta", text) pieces."""
+    def stream_chat(self, messages, max_tokens=None, temperature=None, thinking=None, info=None):
+        """Yields ("thinking", None) while the model reasons, then ("delta", text) pieces.
+
+        `info`, if given, receives {"finish": finish_reason} once the stream ends."""
         thinking = self.cfg.LLM_THINKING if thinking is None else thinking
         payload = self._payload(messages, max_tokens, temperature, thinking, stream=True)
         response = self._post(self.cfg.LLM_BASE_URL + "/chat/completions", payload,
@@ -155,6 +162,8 @@ class LLMClient:
                     choice = json.loads(data)["choices"][0]
                 except (ValueError, KeyError, IndexError):
                     continue
+                if choice.get("finish_reason") and info is not None:
+                    info["finish"] = choice["finish_reason"]
                 delta = choice.get("delta") or {}
                 if (delta.get("reasoning_content") or delta.get("reasoning")) and not announced:
                     announced = True

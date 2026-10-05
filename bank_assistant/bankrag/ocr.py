@@ -12,12 +12,16 @@ import importlib
 import io
 import json
 import logging
+import os
 import re
 import shutil
 
 import requests
 
 from .llm import strip_thinking
+
+# Tesseract's OpenMP threads spin and starve each other under any other CPU load: one thread per call
+os.environ.setdefault("OMP_THREAD_LIMIT", "1")
 
 log = logging.getLogger(__name__)
 
@@ -29,45 +33,51 @@ VISION_PROMPT = (
 )
 
 
-def render_pages(data, page_numbers, dpi):
-    """Yield (page_number, PIL image) for the given 1-based page numbers."""
-    import pypdfium2 as pdfium
+MAX_RENDER_SIDE = 4000  # pixels: a page drawn as a huge "photo" must not need gigabytes of memory
 
-    pdf = pdfium.PdfDocument(data)
-    try:
-        for number in page_numbers:
-            page = pdf[number - 1]
-            yield number, page.render(scale=dpi / 72).to_pil().convert("RGB")
+
+class PageRenderer:
+    """Renders single PDF pages to images; open once per document, one page at a time."""
+
+    def __init__(self, data):
+        import pypdfium2 as pdfium
+
+        self.pdf = pdfium.PdfDocument(data)
+
+    def render(self, number, dpi, grayscale=False):
+        page = self.pdf[number - 1]
+        try:
+            width, height = page.get_size()
+            scale = min(dpi / 72, MAX_RENDER_SIDE / max(width, height, 1))
+            image = page.render(scale=scale, grayscale=grayscale).to_pil()
+            return image.convert("L" if grayscale else "RGB")
+        finally:
             page.close()
-    finally:
-        pdf.close()
+
+    def close(self):
+        self.pdf.close()
 
 
 _PERCENT = re.compile(r"[0-9٠-٩]\s*[%٪]|[%٪]\s*[0-9٠-٩]")
-_DIGIT = re.compile(r"[0-9٠-٩]")
-
-
-def _overlap(a, b):
-    """Share of box a covered by box b (boxes are left, top, right, bottom)."""
-    width = min(a[2], b[2]) - max(a[0], b[0])
-    height = min(a[3], b[3]) - max(a[1], b[1])
-    area = (a[2] - a[0]) * (a[3] - a[1])
-    return width * height / area if width > 0 and height > 0 and area > 0 else 0.0
+_NUMBER = re.compile(r"[0-9][0-9.,]*")
+TESSERACT_TIMEOUT = 120  # seconds per call: one pathological page must not block the indexer
 
 
 class TesseractOcr:
-    """Tesseract with two passes over each page:
-    1. the configured languages (Arabic + French) read the text;
-    2. Arabic + English re-reads the page only to recover "%" signs, which the Arabic/French
-       models often turn into digits next to Arabic text (30% -> 9030). A number from pass 1 is
-       replaced only where pass 2 found a percentage at the same place on the page."""
+    """Tesseract on this server.
+
+    Pages are turned into black text on white with table rules removed (Tesseract drops the text of
+    ruled cells otherwise). Next to Arabic text the Arabic/French models often read "30%" as "9030",
+    so every number is re-read on its own with the English model limited to digits and "%"; the
+    re-read replaces the number only when it found a percent sign and the same digits."""
 
     name = "tesseract"
+    grayscale = True
 
     def __init__(self, cfg):
         self.wanted = [lang for lang in cfg.OCR_LANGS.split("+") if lang]
         self.langs = cfg.OCR_LANGS
-        self.percent_langs = None
+        self.number_lang = None
         self.dpi = cfg.OCR_DPI
         self.psm = cfg.OCR_PSM
 
@@ -88,14 +98,13 @@ class TesseractOcr:
         if not found or ("ara" in self.wanted and "ara" not in found):
             return False  # Arabic documents would come out as garbage
         self.langs = "+".join(found)
-        if "ara" in found and "eng" in installed and "eng" not in found:
-            self.percent_langs = "ara+eng"
+        self.number_lang = "eng" if "eng" in installed else None
         return True
 
-    def _words(self, image, langs):
+    def _words(self, image, langs, config):
         import pytesseract
 
-        data = pytesseract.image_to_data(image, lang=langs, config=f"--psm {self.psm}",
+        data = pytesseract.image_to_data(image, lang=langs, config=config, timeout=TESSERACT_TIMEOUT,
                                          output_type=pytesseract.Output.DICT)
         words = []
         for i, text in enumerate(data["text"]):
@@ -109,46 +118,91 @@ class TesseractOcr:
                 })
         return words
 
+    def _fix_percentages(self, image, words):
+        """Re-read every number in one strip image (English model, digits and % only)."""
+        from PIL import Image
+
+        targets = [w for w in words if _NUMBER.search(w["text"]) and not _PERCENT.search(w["text"])
+                   and len(w["text"]) <= 16]
+        if not targets or not self.number_lang:
+            return
+        pad, gap = 6, 24
+        crops = []
+        for word in targets:
+            left, top, right, bottom = word["box"]
+            crops.append(image.crop((max(0, left - pad), max(0, top - pad),
+                                     min(image.width, right + pad), min(image.height, bottom + pad))))
+        width = max(c.width for c in crops) + 2 * gap
+        height = sum(c.height + gap for c in crops) + gap
+        strip = Image.new("L", (width, height), 255)
+        bands, y = [], gap
+        for crop in crops:
+            strip.paste(crop, (gap, y))
+            bands.append((y, y + crop.height))
+            y += crop.height + gap
+        found = {}
+        config = "--psm 6 -c tessedit_char_whitelist=0123456789%.,"
+        for item in self._words(strip, self.number_lang, config):
+            middle = (item["box"][1] + item["box"][3]) / 2
+            for index, (top, bottom) in enumerate(bands):
+                if top - gap / 2 <= middle <= bottom + gap / 2:
+                    found[index] = found.get(index, "") + item["text"]
+                    break
+        for index, text in found.items():
+            word = targets[index]
+            digits = re.sub(r"\D", "", text)
+            match = _NUMBER.search(word["text"])
+            # the misread sign shows up as extra digits: accept only a % reading of the same digits
+            if "%" in text and digits and digits in re.sub(r"\D", "", match.group()):
+                word["text"] = word["text"][:match.start()] + text + word["text"][match.end():]
+
+    @staticmethod
+    def binarize(image):
+        """Black text on white with long table rules removed."""
+        import numpy as np
+        from PIL import Image, ImageOps
+
+        grey = np.asarray(ImageOps.autocontrast(image.convert("L")), dtype=np.uint8)
+        hist = np.bincount(grey.ravel(), minlength=256).astype(np.float64)
+        levels = np.arange(256)
+        weight = np.cumsum(hist)
+        mean = np.cumsum(hist * levels)
+        total, total_mean = weight[-1], mean[-1]
+        with np.errstate(divide="ignore", invalid="ignore"):  # Otsu's threshold
+            between = (total_mean * weight - mean * total) ** 2 / (weight * (total - weight))
+        threshold = int(np.nanargmax(between)) if np.isfinite(between).any() else 128
+        threshold = min(threshold + 20, 210)  # keeps thin strokes of Arabic letters and % signs
+        ink = grey <= threshold
+        height, width = ink.shape
+        for axis, length in ((1, max(120, width // 12)), (0, max(120, height // 20))):
+            ink &= ~_long_runs(ink, axis, length)
+        return Image.fromarray(np.where(ink, 0, 255).astype(np.uint8))
+
     def page_text(self, image):
         image = self.binarize(image)
-        words = self._words(image, self.langs)
-        if self.percent_langs and any(_DIGIT.search(w["text"]) for w in words):
-            for fix in self._words(image, self.percent_langs):
-                if not _PERCENT.search(fix["text"]):
-                    continue
-                target = max(words, key=lambda w: _overlap(fix["box"], w["box"]), default=None)
-                if (target is not None and _overlap(fix["box"], target["box"]) >= 0.5
-                        and _DIGIT.search(target["text"]) and not _PERCENT.search(target["text"])):
-                    target["text"] = fix["text"]
+        words = self._words(image, self.langs, f"--psm {self.psm}")
+        self._fix_percentages(image, words)
         lines = {}
         for word in words:
             lines.setdefault(word["line"], []).append(word)
         return "\n".join(" ".join(w["text"] for w in sorted(group, key=lambda w: w["n"]))
                          for _, group in sorted(lines.items()))
 
-    @staticmethod
-    def binarize(image):
-        """Black text on white: removes scan noise and grey backgrounds (much better accuracy)."""
-        from PIL import ImageOps
 
-        grey = ImageOps.autocontrast(image.convert("L"))
-        hist = grey.histogram()[:256]
-        total = sum(hist)
-        sum_all = sum(i * h for i, h in enumerate(hist))
-        weight = acc = 0
-        best, threshold = -1.0, 128
-        for level in range(256):  # Otsu's threshold
-            weight += hist[level]
-            if not weight or weight == total:
-                continue
-            acc += level * hist[level]
-            mean_b, mean_f = acc / weight, (sum_all - acc) / (total - weight)
-            between = weight * (total - weight) * (mean_b - mean_f) ** 2
-            if between > best:
-                best, threshold = between, level
-        threshold = min(threshold + 20, 210)  # keep thin strokes of Arabic letters and % signs
-        return grey.point(lambda v: 255 if v > threshold else 0)
+def _long_runs(mask, axis, length):
+    """Pixels that belong to a straight run of at least `length` set pixels along `axis`."""
+    import numpy as np
 
+    m = np.moveaxis(mask, axis, -1).astype(np.int32)
+    csum = np.concatenate([np.zeros(m.shape[:-1] + (1,), np.int32), np.cumsum(m, axis=-1)], axis=-1)
+    full = (csum[..., length:] - csum[..., :-length]) == length   # windows that are entirely set
+    starts = np.concatenate([np.zeros(full.shape[:-1] + (1,), np.int32), np.cumsum(full, axis=-1)], axis=-1)
+    n = m.shape[-1]
+    idx = np.arange(n)
+    lo = np.clip(idx - length + 1, 0, full.shape[-1])
+    hi = np.clip(idx + 1, 0, full.shape[-1])
+    covered = (starts[..., hi] - starts[..., lo]) > 0               # some full window covers the pixel
+    return np.moveaxis(covered, -1, axis)
 
 
 class VisionOcr:
@@ -158,8 +212,10 @@ class VisionOcr:
         self.base_url = cfg.OCR_VISION_BASE_URL.rstrip("/")
         self.model = cfg.OCR_VISION_MODEL
         self.api_key = cfg.OCR_VISION_API_KEY
-        self.timeout = cfg.LLM_TIMEOUT
+        self.timeout = cfg.OCR_TIMEOUT
         self.dpi = min(cfg.OCR_DPI, 200)
+
+    grayscale = False
 
     def available(self):
         return bool(self.model)
@@ -171,6 +227,7 @@ class VisionOcr:
         url = "data:image/jpeg;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
         payload = {
             "model": self.model,
+            "temperature": 0,
             "messages": [{"role": "user", "content": [
                 {"type": "text", "text": VISION_PROMPT},
                 {"type": "image_url", "image_url": {"url": url}},

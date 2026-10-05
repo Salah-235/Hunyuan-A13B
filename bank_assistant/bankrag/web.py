@@ -393,7 +393,7 @@ def create_app(cfg=None, start_worker=True):
         doc = db.query_one("SELECT title FROM documents WHERE id = ?", (doc_id,))
         if doc is None:
             abort(404)
-        db.execute("UPDATE documents SET status = 'pending', error = '' WHERE id = ?", (doc_id,))
+        db.execute("UPDATE documents SET status = 'pending', error = '', attempts = 0 WHERE id = ?", (doc_id,))
         indexer.enqueue(doc_id)
         audit("reindex", doc["title"])
         return jsonify(ok=True)

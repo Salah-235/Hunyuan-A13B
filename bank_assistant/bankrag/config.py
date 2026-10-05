@@ -74,6 +74,8 @@ class Config:
         self.TOP_K = _int("TOP_K", 8)
         self.TOP_K_FULL = _int("TOP_K_FULL", 24)          # "comprehensive answer" mode
         self.SUMMARY_PART_CHARS = _int("SUMMARY_PART_CHARS", 40000)
+        self.SUMMARY_MAX_PARTS = _int("SUMMARY_MAX_PARTS", 80)  # about 3 million characters
+        self.SUMMARY_MAX_JOBS = _int("SUMMARY_MAX_JOBS", 2)     # summaries prepared at the same time
 
         # --- OCR for scanned PDF pages: auto | tesseract | vision | off ---
         self.OCR_ENGINE = env("OCR_ENGINE") or "auto"
@@ -81,6 +83,7 @@ class Config:
         self.OCR_PSM = _int("OCR_PSM", 6)  # 6 = one block of text (best for tables), 3 = automatic layout
         self.OCR_DPI = _int("OCR_DPI", 300)
         self.OCR_MAX_PAGES = _int("OCR_MAX_PAGES", 300)
+        self.OCR_TIMEOUT = _int("OCR_TIMEOUT", 120)  # seconds per page for the vision model
         self.OCR_VISION_MODEL = env("OCR_VISION_MODEL") or ""
         self.OCR_VISION_BASE_URL = (env("OCR_VISION_BASE_URL") or "").rstrip("/")
         self.OCR_VISION_API_KEY = env("OCR_VISION_API_KEY") or ""

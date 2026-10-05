@@ -6,7 +6,7 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 
-from .ocr import render_pages
+from .ocr import PageRenderer
 from .textproc import clean_text
 
 log = logging.getLogger(__name__)
@@ -30,6 +30,8 @@ class Chunk:
     page_end: int | None
     heading: str = ""
     ocr: bool = False
+    # where the page changes inside the chunk: "line:page,line:page" (empty when it stays on one page)
+    page_map: str = ""
 
 
 @dataclass
@@ -86,6 +88,8 @@ _JOINERS = set(" .,:/-'’_")
 _MIRROR = str.maketrans("()[]{}<>«»", ")(][}{><»«")
 CELL_GAP = 1.6  # a gap wider than 1.6 x font size separates table cells
 _PCT_BEFORE_NUMBER = re.compile("(?<![0-9٠-٩])([%٪‰])([0-9]+(?:[.,][0-9]+)*|[٠-٩]+(?:[٫٬][٠-٩]+)*)")
+# OCR text: "%30" -> "30%", but never touch a sign that already follows a number ("6,5 % 12 mois")
+_PCT_OCR = re.compile("(?<![0-9٠-٩])(?<![0-9٠-٩][ \u00a0\u202f])([%٪‰])([0-9]+(?:[.,][0-9]+)*|[٠-٩]+(?:[٫٬][٠-٩]+)*)")
 
 _AN = re.compile("[\u0660-\u0669\u066B\u066C]")
 _EN = re.compile("[0-9\u06F0-\u06F9]")
@@ -385,31 +389,43 @@ def extract_pdf(data, ocr=None, ocr_max_pages=300):
     result = Extraction(pages=len(pages))
     empty = [n for n, text in enumerate(pages, start=1) if len(text.strip()) < MIN_PAGE_CHARS]
     ocr_pages = set()
-    ocr_failed = False
+    ocr_failed = ocr_partial = False
     if empty and ocr is not None:
-        failures = 0
+        todo = empty[:ocr_max_pages]
+        failures = consecutive = 0
         try:
-            for number, image in render_pages(data, empty[:ocr_max_pages], ocr.dpi):
+            renderer = PageRenderer(data)
+        except Exception as exc:  # noqa: BLE001 - pages cannot be rendered: keep the text layer
+            log.warning("could not open PDF for OCR: %s", exc)
+            renderer, todo = None, []
+            failures = 1
+        try:
+            for number in todo:
                 try:
-                    text = ocr.page_text(image)
+                    text = ocr.page_text(renderer.render(number, ocr.dpi, grayscale=ocr.grayscale))
+                    consecutive = 0
                 except Exception as exc:  # noqa: BLE001 - one unreadable page must not fail the document
                     log.warning("OCR failed on page %s: %s", number, exc)
                     failures += 1
-                    if failures >= 3 and not ocr_pages:
-                        break  # the engine is down: do not wait for every page to time out
+                    consecutive += 1
+                    if consecutive >= 3:
+                        break  # the engine is down or hung: do not wait for every page to time out
                     continue
                 if len(text.strip()) >= MIN_PAGE_CHARS:
-                    pages[number - 1] = _PCT_BEFORE_NUMBER.sub(r"\2\1", text)  # "%30" -> "30%"
+                    pages[number - 1] = _PCT_OCR.sub(r"\2\1", text)  # "%30" -> "30%"
                     ocr_pages.add(number)
-        except Exception as exc:  # noqa: BLE001 - page rendering failed: keep the text layer
-            log.warning("could not render PDF pages for OCR: %s", exc)
+        finally:
+            if renderer is not None:
+                renderer.close()
         ocr_failed = not ocr_pages
+        # some scanned pages were skipped (over the limit) or could not be read
+        ocr_partial = bool(ocr_pages) and (len(empty) > len(todo) or failures > 0)
     text_chars = 0
     for number, text in enumerate(pages, start=1):
         text_chars += len(text.strip())
         result.units.extend(_lines_to_units(text, number, number in ocr_pages))
     if ocr_pages:
-        result.warning = "ocr"
+        result.warning = "ocr_partial" if ocr_partial else "ocr"
     elif result.pages and text_chars < MIN_PAGE_CHARS * result.pages:
         result.warning = "ocr_failed" if ocr_failed else "scanned_pdf"
     return result
@@ -589,6 +605,34 @@ def _split_long(unit, size):
     return [Unit(p, unit.page, unit.level, unit.ocr) for p in pieces if p]
 
 
+def _page_map(units):
+    """Line index -> page wherever the page changes, so text can be put back on its real page."""
+    line_pages = []
+    for unit in units:
+        line_pages.extend([unit.page] * (unit.text.count("\n") + 1))
+    if len({p for p in line_pages if p is not None}) < 2:
+        return ""
+    marks, last = [], None
+    for i, page in enumerate(line_pages):
+        if page is not None and page != last:
+            marks.append(f"{i}:{page}")
+            last = page
+    return ",".join(marks)
+
+
+def chunk_line_pages(text, page_start, page_map):
+    """The page of every line of a chunk (inverse of _page_map)."""
+    lines = text.split("\n")
+    pages = [page_start] * len(lines)
+    if page_map:
+        marks = sorted((int(i), int(p)) for i, p in (m.split(":") for m in page_map.split(",") if ":" in m))
+        for n, (start, page) in enumerate(marks):
+            end = marks[n + 1][0] if n + 1 < len(marks) else len(lines)
+            for i in range(start, min(end, len(lines))):
+                pages[i] = page
+    return lines, pages
+
+
 def chunk_units(units, size=1200, overlap=200):
     """Group units into chunks of about `size` characters.
 
@@ -619,7 +663,7 @@ def chunk_units(units, size=1200, overlap=200):
             if len(text) >= 15:
                 chunks.append(Chunk(text, min(pages) if pages else None,
                                     max(pages) if pages else None, chunk_heading,
-                                    any(u.ocr for u in current)))
+                                    any(u.ocr for u in current), _page_map(current)))
         tail = []
         if keep_overlap and overlap > 0:
             total = 0

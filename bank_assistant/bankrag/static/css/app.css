@@ -219,13 +219,17 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .source-item input, .group-head input { width: 17px; height: 17px; margin: 3px 0 0; accent-color: var(--primary); flex: none; }
 .source-item .doc-name { font-size: .9rem; line-height: 1.4; word-break: break-word; }
 .source-item .doc-meta { font-size: .75rem; color: var(--muted); }
+.source-row { display: flex; align-items: flex-start; border-radius: 10px; }
+.source-row:hover { background: var(--surface-2); }
+.source-row .source-item { flex: 1; min-width: 0; }
+.source-row .source-item:hover { background: none; }
 .source-item .doc-text { flex: 1; min-width: 0; }
 .sum-btn {
-  flex: none; width: 30px; height: 30px; margin: -3px 0 0; display: grid; place-items: center; border: 0; border-radius: 8px;
+  flex: none; width: 30px; height: 30px; margin: 5px 0 0; margin-inline-end: 4px; display: grid; place-items: center; border: 0; border-radius: 8px;
   background: none; color: var(--muted); cursor: pointer; opacity: .55; transition: opacity .15s, background .15s, color .15s;
 }
 .sum-btn .icon { width: 17px; height: 17px; }
-.source-item:hover .sum-btn, .sum-btn:focus-visible { opacity: 1; }
+.source-row:hover .sum-btn, .sum-btn:focus-visible { opacity: 1; }
 .sum-btn:hover { background: var(--surface); color: var(--primary); opacity: 1; }
 @media (pointer: coarse) { .sum-btn { opacity: .9; } }
 .file-tag {
@@ -358,7 +362,10 @@ details.more-sources .source-cards { margin-top: 8px; }
 @media (prefers-color-scheme: dark) { .ocr-badge { background: #3a2f12; color: #f3d48a; border-color: #6b5521; } }
 .summary-head { display: flex; align-items: center; gap: 8px; margin: 0 0 2px; font-weight: 700; }
 .summary-head .icon { width: 18px; height: 18px; color: var(--primary); flex: none; }
+.summary-title { min-width: 0; overflow-wrap: anywhere; }
 .summary-meta { margin: 0 0 10px; }
+.summary-meta.warn { color: #9a5b00; font-weight: 600; }
+@media (prefers-color-scheme: dark) { .summary-meta.warn { color: #f3c46a; } }
 .summary-meta:empty { display: none; }
 .page-ref { text-decoration: none; white-space: nowrap; }
 .page-ref:hover { text-decoration: underline; }

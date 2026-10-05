@@ -38,6 +38,8 @@ def answer_for(messages):
             return VISION_TEXT
         user = " ".join(part.get("text", "") for part in user)
     if "You take notes on part" in system:
+        if "EMPTY-NOTES" in user:
+            return ""
         part = re.search(r"part (\d+) of (\d+)", system)
         first = next((line for line in user.split("\n\n", 1)[-1].splitlines()
                       if line.strip() and not line.startswith("[")), "")
@@ -87,8 +89,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "not found"}, 404)
         text = answer_for(payload["messages"])
         full = f"<think>\nأحلل المصادر المتوفرة...\n</think>\n<answer>\n{text}\n</answer>"
+        last = payload["messages"][-1]["content"]
+        finish = "length" if isinstance(last, str) and "TRUNCATE-ME" in last else "stop"
+        if os.environ.get("FAKE_LLM_SUMMARY_DELAY") and "You summarise" in payload["messages"][0]["content"]:
+            time.sleep(float(os.environ["FAKE_LLM_SUMMARY_DELAY"]))
         if not payload.get("stream"):
-            return self._json({"choices": [{"message": {"role": "assistant", "content": full}}]})
+            return self._json({"choices": [{"message": {"role": "assistant", "content": full},
+                                            "finish_reason": finish}]})
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.end_headers()
@@ -97,6 +104,8 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n".encode("utf-8"))
             self.wfile.flush()
             time.sleep(float(os.environ.get("FAKE_LLM_DELAY", "0.002")))
+        end = {"choices": [{"delta": {}, "index": 0, "finish_reason": finish}]}
+        self.wfile.write(f"data: {json.dumps(end)}\n\n".encode("utf-8"))
         self.wfile.write(b"data: [DONE]\n\n")
         self.wfile.flush()
 

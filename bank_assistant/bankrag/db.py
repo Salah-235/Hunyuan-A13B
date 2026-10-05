@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS documents (
     pages INTEGER NOT NULL DEFAULT 0,
     chunks INTEGER NOT NULL DEFAULT 0,
     embedded INTEGER NOT NULL DEFAULT 0,
+    attempts INTEGER NOT NULL DEFAULT 0,
     uploaded_by TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL
 );
@@ -41,7 +42,8 @@ CREATE TABLE IF NOT EXISTS chunks (
     page_end INTEGER,
     heading TEXT NOT NULL DEFAULT '',
     text TEXT NOT NULL,
-    ocr INTEGER NOT NULL DEFAULT 0
+    ocr INTEGER NOT NULL DEFAULT 0,
+    page_map TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS chunks_doc ON chunks(doc_id, idx);
 
@@ -109,6 +111,11 @@ class Database:
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(chunks)")}
         if "ocr" not in columns:
             conn.execute("ALTER TABLE chunks ADD COLUMN ocr INTEGER NOT NULL DEFAULT 0")
+        if "page_map" not in columns:
+            conn.execute("ALTER TABLE chunks ADD COLUMN page_map TEXT NOT NULL DEFAULT ''")
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(documents)")}
+        if "attempts" not in columns:
+            conn.execute("ALTER TABLE documents ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0")
         conn.commit()
 
     def execute(self, sql, params=()):

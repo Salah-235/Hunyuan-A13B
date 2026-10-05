@@ -199,7 +199,8 @@ def test_summary_text_drops_chunk_overlap(tmp_path, llm_server):
     ext = app.extensions["bankrag"]
     assert ext.db.query_one("SELECT COUNT(*) AS n FROM chunks")["n"] > 10
     row = ext.db.query_one("SELECT * FROM documents WHERE id = ?", (doc["id"],))
-    text, ocr, _ = ext.summarizer.document_text(row)
+    text, ocr, _, kind = ext.summarizer.document_text(row)
+    assert kind == "none"
     assert not ocr
     for n in range(1, 80):
         assert text.count(f"المادة {n}:") == 1
@@ -211,3 +212,178 @@ def test_split_parts():
     assert all(len(p) <= 1000 for p in parts)
     assert "\n".join(parts) == text
     assert _split_parts("y" * 2500, 1000) == ["y" * 1000, "y" * 1000, "y" * 500]
+
+
+# ------------------------------------------------------------------ review fixes
+
+def test_summary_page_markers_follow_real_pages(tmp_path, llm_server):
+    from bankrag.ingest import Unit, chunk_units
+
+    app, client = new_app(tmp_path, llm_server)
+    doc = upload(client, app, "pages.txt", "المادة 1: نص مؤقت يستبدل بالمقاطع التالية للاختبار.".encode("utf-8"))
+    ext = app.extensions["bankrag"]
+    # three pages of body text: chunks cross the page breaks
+    units = [Unit(f"P{page}-L{i:02d} " + "نص عادي عن شروط القرض ومبلغه ومدته " * 2, page)
+             for page in (1, 2, 3) for i in range(12)]
+    chunks = chunk_units(units, 1200, 200)
+    assert any(c.page_start != c.page_end for c in chunks) and any(c.page_map for c in chunks)
+    conn = ext.db.connect()
+    with conn:
+        conn.execute("DELETE FROM chunks WHERE doc_id = ?", (doc["id"],))
+        for idx, c in enumerate(chunks):
+            conn.execute("INSERT INTO chunks (doc_id, idx, page_start, page_end, heading, text, ocr, page_map) "
+                         "VALUES (?, ?, ?, ?, ?, ?, 0, ?)", (doc["id"], idx, c.page_start, c.page_end, c.heading,
+                                                            c.text, c.page_map))
+    row = ext.db.query_one("SELECT * FROM documents WHERE id = ?", (doc["id"],))
+    text, _, _, kind = ext.summarizer.document_text(row)
+    assert kind == "page"
+    page, seen = None, []
+    for line in text.split("\n"):
+        if line.startswith("[p. "):
+            page = int(line[4:-1])
+        else:
+            assert line.startswith(f"P{page}-"), (page, line)
+            seen.append(line[:6])
+    assert seen == [f"P{p}-L{i:02d}" for p in (1, 2, 3) for i in range(12)]  # every line once, in order
+
+    # chunks indexed before page maps existed fall back to the page range
+    with conn:
+        conn.execute("UPDATE chunks SET page_map = '' WHERE doc_id = ?", (doc["id"],))
+    text, _, _, _ = ext.summarizer.document_text(row)
+    assert "[p. 1-2]" in text
+
+
+def test_unpaged_document_summary_does_not_ask_for_pages(tmp_path, llm_server):
+    app, client = new_app(tmp_path, llm_server)
+    doc = upload(client, app, "notes.txt", "المادة 1: نص قصير عن القروض والضمانات المطلوبة.".encode("utf-8"))
+    client.summary(doc["id"])
+    system = chat_calls()[-1]["messages"][0]["content"]
+    assert "never cite pages" in system and "(p. 3)" not in system
+
+
+def test_truncated_summary_is_shown_with_warning_but_not_cached(tmp_path, llm_server):
+    app, client = new_app(tmp_path, llm_server)
+    doc = upload(client, app, "long.txt", ("TRUNCATE-ME\n" + LONG_RULES).encode("utf-8"))
+    _, events = client.summary(doc["id"])
+    assert {"type": "warning", "code": "summary_truncated"} in events and events[-1]["type"] == "done"
+    assert text_of(events)
+    assert app.extensions["bankrag"].db.query_one("SELECT COUNT(*) AS n FROM summaries")["n"] == 0
+
+
+def test_empty_part_notes_fail_without_caching(tmp_path, llm_server):
+    app, client = new_app(tmp_path, llm_server, SUMMARY_PART_CHARS=2000)
+    doc = upload(client, app, "long.txt", ("EMPTY-NOTES\n" + LONG_RULES).encode("utf-8"))
+    calls = len(chat_calls())
+    _, events = client.summary(doc["id"])
+    assert events[-1] == {"type": "error", "code": "summary_failed"}
+    assert not any("You summarise" in c["messages"][0]["content"] for c in chat_calls()[calls:])
+    assert app.extensions["bankrag"].db.query_one("SELECT COUNT(*) AS n FROM summaries")["n"] == 0
+
+
+def test_concurrent_requests_share_one_summary_job(tmp_path, llm_server, monkeypatch):
+    import threading
+
+    monkeypatch.setenv("FAKE_LLM_SUMMARY_DELAY", "1.5")
+    app, client = new_app(tmp_path, llm_server, SUMMARY_MAX_JOBS=1)
+    a = upload(client, app, "a.txt", LONG_RULES.encode("utf-8"))
+    b = upload(client, app, "b.txt", ("ملحق\n" + LONG_RULES).encode("utf-8"))
+    before = sum("You summarise" in c["messages"][0]["content"] for c in chat_calls())
+    results = {}
+
+    def run(name, doc_id):
+        other = Client(app)
+        other.http = client.http.application.test_client()
+        other.http.set_cookie("bankrag_session", client.http.get_cookie("bankrag_session").value)
+        other.csrf = client.csrf
+        results[name] = other.summary(doc_id)[1]
+
+    threads = [threading.Thread(target=run, args=("first", a["id"]))]
+    threads[0].start()
+    import time
+    time.sleep(0.5)
+    threads.append(threading.Thread(target=run, args=("second", a["id"])))
+    threads.append(threading.Thread(target=run, args=("other", b["id"])))
+    for t in threads[1:]:
+        t.start()
+    for t in threads:
+        t.join(30)
+    after = sum("You summarise" in c["messages"][0]["content"] for c in chat_calls())
+    assert after - before == 1                                  # one model run for doc a
+    assert {"type": "status", "stage": "waiting"} in results["second"]
+    assert results["second"][-1]["type"] == "done" and text_of(results["second"]) == text_of(results["first"]).strip()
+    assert results["other"] == [{"type": "error", "code": "summary_busy"}]
+
+
+def test_ocr_percent_normalisation_only_touches_signs_before_numbers():
+    from bankrag.ingest import _PCT_OCR
+
+    assert _PCT_OCR.sub(r"\2\1", "القسط الشهري %30 من الدخل") == "القسط الشهري 30% من الدخل"
+    assert _PCT_OCR.sub(r"\2\1", "Taux : 6,5 % 12 mois") == "Taux : 6,5 % 12 mois"
+    assert _PCT_OCR.sub(r"\2\1", "taux de 5 %10 ans") == "taux de 5 %10 ans"
+
+
+def test_giant_pages_are_rendered_within_the_pixel_cap():
+    import io
+
+    from PIL import Image
+
+    from bankrag.ocr import MAX_RENDER_SIDE, PageRenderer
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (120, 90), "white").save(buffer, "PDF", resolution=1)  # 8640 x 6480 pt page
+    renderer = PageRenderer(buffer.getvalue())
+    image = renderer.render(1, 300, grayscale=True)
+    renderer.close()
+    assert max(image.size) <= MAX_RENDER_SIDE and image.mode == "L"
+
+
+@pytest.mark.skipif(not TesseractOcr(Config(OCR_ENGINE="tesseract")).available(),
+                    reason="tesseract with Arabic language data is not installed")
+def test_tesseract_reads_ruled_tables_and_percentages():
+    from bankrag.ingest import extract_pdf
+    from bankrag.ocr import PageRenderer
+
+    engine = TesseractOcr(Config(OCR_ENGINE="tesseract", OCR_LANGS="ara+fra"))
+    assert engine.available()
+    renderer = PageRenderer((FIXTURES / "table_ar.pdf").read_bytes())
+    table = engine.page_text(renderer.render(1, 300, grayscale=True))
+    renderer.close()
+    assert "6.5%" in table and "8%" in table and "قرض السيارة" in table
+    scanned = "\n".join(u.text for u in extract_pdf((FIXTURES / "scanned_ar.pdf").read_bytes(), engine).units)
+    assert "30%" in scanned and "90%" in scanned
+
+
+def test_document_that_crashed_the_server_twice_is_not_retried(tmp_path, llm_server):
+    app, client = new_app(tmp_path, llm_server)
+    doc = upload(client, app, "a.txt", "المادة 1: نص قصير عن القروض والضمانات المطلوبة.".encode("utf-8"))
+    ext = app.extensions["bankrag"]
+    ext.db.execute("UPDATE documents SET status = 'processing', attempts = 2 WHERE id = ?", (doc["id"],))
+    restarted = create_app(make_config(tmp_path, llm_server))
+    restarted.extensions["bankrag"].indexer.queue.join()
+    row = ext.db.query_one("SELECT status, error FROM documents WHERE id = ?", (doc["id"],))
+    assert (row["status"], row["error"]) == ("error", "processing_failed")
+    # an administrator can still ask for it to be processed again
+    assert client.api("POST", f"/api/documents/{doc['id']}/reindex").status_code == 200
+
+
+def test_embedding_failure_keeps_the_ocr_warning(tmp_path, llm_server):
+    app, client = new_app(tmp_path, llm_server)
+    doc = upload(client, app, "a.txt", "المادة 1: نص قصير عن القروض والضمانات المطلوبة.".encode("utf-8"))
+    ext = app.extensions["bankrag"]
+    ext.db.execute("UPDATE documents SET warning = 'ocr' WHERE id = ?", (doc["id"],))
+    ext.indexer._add_warning(doc["id"], "embedding_failed")
+    ext.indexer._add_warning(doc["id"], "embedding_failed")
+    assert ext.db.query_one("SELECT warning FROM documents WHERE id = ?", (doc["id"],))["warning"] == "ocr,embedding_failed"
+
+
+def test_llm_reports_finish_reason_and_strips_unclosed_thinking(tmp_path, llm_server):
+    from bankrag.llm import LLMClient, strip_thinking
+
+    assert strip_thinking("<think>still reasoning when cut off") == ""
+    llm = LLMClient(make_config(tmp_path, llm_server))
+    info = {}
+    llm.chat([{"role": "user", "content": "TRUNCATE-ME"}], info=info)
+    assert info["finish"] == "length"
+    info = {}
+    list(llm.stream_chat([{"role": "user", "content": "hello"}], info=info))
+    assert info["finish"] == "stop"

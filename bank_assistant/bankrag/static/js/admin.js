@@ -31,14 +31,14 @@
     return Math.max(1, Math.round(bytes / 1024)) + " KB";
   }
 
-  function problemText(code) {
-    if (!code) return "";
-    const key = I18N_KEY(code);
-    return key ? t(key) : code;
+  function problemText(codes) {
+    if (!codes) return "";
+    return codes.split(",").filter(Boolean).map((code) => { const key = I18N_KEY(code); return key ? t(key) : code; }).join(" ");
   }
   function I18N_KEY(code) {
     const map = {
-      scanned_pdf: "warn_scanned_pdf", ocr: "warn_ocr", ocr_failed: "warn_ocr_failed",
+      scanned_pdf: "warn_scanned_pdf", ocr: "warn_ocr", ocr_failed: "warn_ocr_failed", ocr_partial: "warn_ocr_partial",
+      processing_failed: "err_processing_failed",
       embedding_failed: "warn_embedding_failed", no_text: "err_no_text",
       encrypted_pdf: "err_encrypted_pdf", unsupported_type: "err_unsupported_type",
     };
