@@ -47,7 +47,7 @@
       summaryRefresh: "إعادة التلخيص", summaryNote: "ملخص آلي للوثيقة كلها — راجع الوثيقة الأصلية قبل أي قرار.",
       stSumAll: "Claude يقرأ الوثيقة كاملة", stSumRead: (i, n) => `Claude يقرأ الوثيقة (الجزء ${i} من ${n})`, stSumWrite: "Claude يجمع الملخص",
       summaryUnavailable: "التلخيص يحتاج إلى Claude، وهو غير متاح في هذا العرض.",
-      summaryIncomplete: "بعض أجزاء الوثيقة لم تُقرأ كاملة، فقد ينقص الملخص بعض المعلومات (لم يُحفظ).",
+      summaryIncomplete: "بعض أجزاء الوثيقة لم تُقرأ كاملة، فقد ينقص الملخص بعض المعلومات (لم يُحفظ).", summaryShowSaved: "عرض الملخص المحفوظ",
       ocrBadge: "OCR", ocrDoc: "مقروءة آلياً (OCR)",
       ocrHint: "نص مقروء آلياً من صفحة ممسوحة ضوئياً — قد تحتوي الأرقام على أخطاء، تحقق منها في الأصل.",
       ocrProgress: (i, n) => `قراءة الصفحات الممسوحة ${i}/${n}…`,
@@ -100,7 +100,7 @@
       summaryRefresh: "Refaire le résumé", summaryNote: "Résumé automatique de tout le document — consultez l'original avant toute décision.",
       stSumAll: "Claude lit tout le document", stSumRead: (i, n) => `Claude lit le document (partie ${i} sur ${n})`, stSumWrite: "Claude assemble le résumé",
       summaryUnavailable: "Le résumé a besoin de Claude, qui n'est pas disponible dans cet affichage.",
-      summaryIncomplete: "Certaines parties du document n'ont pas été lues en entier : le résumé peut être incomplet (non enregistré).",
+      summaryIncomplete: "Certaines parties du document n'ont pas été lues en entier : le résumé peut être incomplet (non enregistré).", summaryShowSaved: "Afficher le résumé enregistré",
       ocrBadge: "OCR", ocrDoc: "lu par OCR",
       ocrHint: "Texte lu automatiquement sur une page scannée — les chiffres peuvent contenir des erreurs, vérifiez l'original.",
       ocrProgress: (i, n) => `Lecture des pages scannées ${i}/${n}…`,
@@ -396,10 +396,14 @@
   // ------------------------------------------------------------------ OCR of scanned PDF pages (Claude reads the page image)
   const OCR_MAX_PAGES = 30, MIN_PAGE_CHARS = 30;
   const OCR_PROMPT = `The image is one scanned page of an internal bank document. Transcribe all the text on it exactly as written, in reading order. Keep Arabic and French as they are: do not translate, summarise, correct or add anything. Copy numbers, percentages, amounts and dates exactly. Write each table row on one line with the cells separated by " | ". Write [?] for a word you cannot read. Reply with only the page text, without any introduction or comment. If the page has no text, reply with exactly: (empty page)`;
-  // "%30" -> "30%", but never touch a sign that already follows a number ("6,5 % 12 mois")
-  const PCT_FIRST = /(?<![0-9٠-٩])(?<![0-9٠-٩][ \u00A0\u202F])([%٪‰])([0-9]+(?:[.,][0-9]+)*|[٠-٩]+(?:[٫٬][٠-٩]+)*)/g;
+  // "%30" -> "30%" (also in rows like "%5 %5.5 %6"), but never touch a sign that already follows a plain number ("6,5 % 12 mois")
+  const PCT_SIGN_FIRST = /(?<![0-9٠-٩])([%٪‰])([0-9]+(?:[.,][0-9]+)*|[٠-٩]+(?:[٫٬][٠-٩]+)*)/g;
+  const PLAIN_NUMBER_BEFORE = /(?:^|[^%٪‰0-9٠-٩.,٫٬])[0-9٠-٩][0-9٠-٩.,٫٬]*[ \u00A0\u202F]$/;
+  const fixOcrPercent = (text) => text.replace(PCT_SIGN_FIRST, (m, sign, num, offset, str) =>
+    (PLAIN_NUMBER_BEFORE.test(str.slice(Math.max(0, offset - 40), offset)) ? m : num + sign));
   const IMAGE_OPS = ["paintImageXObject", "paintInlineImageXObject", "paintImageMaskXObject", "paintJpegXObject",
     "paintImageXObjectRepeat", "paintInlineImageXObjectGroup", "paintImageMaskXObjectGroup", "paintImageMaskXObjectRepeat"];
+  const DRAW_OPS = ["constructPath", "fill", "eoFill", "fillStroke", "eoFillStroke"];  // text drawn as outlines
 
   async function pageImage(page) {
     const base = page.getViewport({ scale: 1 });
@@ -420,27 +424,29 @@
 
   /** Reads image-only pages with Claude: {done: pages read, stop: why reading stopped early, or ""}. */
   async function ocrPages(pdf, texts, pages, progress) {
-    const done = new Set();
-    let failures = 0, stop = "";
+    const done = new Set(), seen = new Set();   // seen: read fine but blank or only a few words
+    let consecutive = 0, stop = "";
     for (let i = 0; i < pages.length && sample && imageOcr; i++) {
       progress(T().ocrProgress(i + 1, pages.length));
       try {
         const image = await pageImage(await pdf.getPage(pages[i]));
         const res = await sample(OCR_PROMPT, { images: image, modelTier: "default" });
         const text = res.text.trim();
-        if (text.length >= MIN_PAGE_CHARS && text !== "(empty page)") {
-          texts[pages[i] - 1] = text.replace(PCT_FIRST, "$2$1");   // "%30" -> "30%"
-          done.add(pages[i]);
-        }
+        consecutive = 0;
+        if (text && text !== "(empty page)") texts[pages[i] - 1] = fixOcrPercent(text);
+        (text.length >= MIN_PAGE_CHARS && text !== "(empty page)" ? done : seen).add(pages[i]);
       } catch (e) {
         const code = e && e.code;
         if (code === "not_granted" || code === "sampling_disabled" || code === "not_declared") { sample = null; declined = true; break; }
         if (code === "images_unavailable" || code === "capability_disabled" || code === "capability_removed") { imageOcr = false; break; }
         if (code === "rate_limited" || code === "session_expired") { stop = code; break; }
-        if (++failures >= 3) { stop = "failing"; break; }  // keep the pages' own text; do not hammer a failing service
+        // a refused or rejected page is skipped; the service failing again and again stops the reading
+        if (code === "upstream_error" || code === undefined) {
+          if (++consecutive >= 3) { stop = "failing"; break; }
+        } else consecutive = 0;
       }
     }
-    return { done, stop };
+    return { done, seen, stop };
   }
 
   async function parseFile(file, progress) {
@@ -449,34 +455,37 @@
     if (ext === ".pdf") {
       await loadLib("pdf");
       const pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(buf), isEvalSupported: false }).promise;
-      const texts = [], images = [];
-      const imageOps = new Set(IMAGE_OPS.map((name) => window.pdfjsLib.OPS[name]).filter((v) => v !== undefined));
+      const texts = [], drawn = [];
+      const ops = (names) => new Set(names.map((name) => window.pdfjsLib.OPS[name]).filter((v) => v !== undefined));
+      const imageOps = ops(IMAGE_OPS), drawOps = ops(DRAW_OPS);
       for (let p = 1; p <= pdf.numPages; p++) {
         const page = await pdf.getPage(p);
         const tc = await page.getTextContent();
-        let edges = [], hasImage = true;
+        let edges = [], visible = true;
         try {
-          const ops = await page.getOperatorList();
-          edges = Core.pdfEdgesFromOps(ops, window.pdfjsLib.OPS);
-          hasImage = ops.fnArray.some((fn) => imageOps.has(fn));
+          const list = await page.getOperatorList();
+          edges = Core.pdfEdgesFromOps(list, window.pdfjsLib.OPS);
+          // an image, or many drawn shapes (text converted to outlines): something to read on the page
+          visible = list.fnArray.some((fn) => imageOps.has(fn)) || list.fnArray.filter((fn) => drawOps.has(fn)).length >= 40;
         } catch (e) { edges = []; }
         texts.push(Core.pdfItemsToLines(tc.items, edges).join("\n"));
-        images.push(hasImage);
+        drawn.push(visible);
       }
-      // pages with almost no text that show an image: scanned pages (blank pages and dividers are skipped)
-      const empty = texts.map((t, i) => (t.trim().length < MIN_PAGE_CHARS && images[i] ? i + 1 : 0)).filter(Boolean);
-      let read = new Set(), stop = "", tried = false;
+      // pages with almost no text that show something: scanned or outlined pages (blank pages and dividers are skipped)
+      const empty = texts.map((t, i) => (t.trim().length < MIN_PAGE_CHARS && drawn[i] ? i + 1 : 0)).filter(Boolean);
+      let read = new Set(), seen = new Set(), stop = "", tried = false;
       if (empty.length && sample && imageOcr) {
         tried = true;
-        ({ done: read, stop } = await ocrPages(pdf, texts, empty.slice(0, OCR_MAX_PAGES), progress));
+        ({ done: read, seen, stop } = await ocrPages(pdf, texts, empty.slice(0, OCR_MAX_PAGES), progress));
       }
       const units = [];
       let chars = 0;
       texts.forEach((text, i) => { chars += text.trim().length; units.push(...Core.linesToUnits(text, i + 1)); });
       const scanned = chars < MIN_PAGE_CHARS * pdf.numPages;
-      const missing = empty.length - read.size;
+      const missing = empty.length - read.size - seen.size;
       return {
-        ext, units, pages: pdf.numPages, ocrPages: [...read], ocrMissing: missing, ocrStop: stop,
+        ext, units, pages: pdf.numPages, ocrPages: [...read, ...[...seen].filter((n) => texts[n - 1].trim())],
+        ocrRead: read.size, ocrMissing: missing, ocrStop: stop,
         warning: read.size ? (missing ? "ocr_partial" : "ocr") : !scanned ? (missing ? "ocr_partial" : "") : tried ? "ocr_failed" : "scanned",
       };
     }
@@ -587,7 +596,7 @@
         id, title: file.name.replace(/\.[^.]+$/, "").replace(/_/g, " ").trim() || file.name, filename: file.name,
         ext: parsed.ext, category, pages: parsed.pages, chunks: chunks.length, size: file.size,
         created: new Date().toISOString(), ver: Date.now(), sample: false, warning: parsed.warning,
-        ocrMissing: parsed.ocrMissing || 0,
+        ocrMissing: parsed.ocrMissing || 0, ocrRead: parsed.ocrRead || 0,
       };
       try {
         await saveDoc(meta, chunks);
@@ -668,7 +677,7 @@
                 <input type="checkbox" data-doc="${esc(d.id)}" ${deselected.has(d.id) ? "" : "checked"}>
                 <span class="tag tag-${esc(ext)}">${esc(ext.toUpperCase())}</span>
                 <span class="doc-text"><span class="doc-title" dir="auto">${esc(d.title)}</span>
-                  <span class="doc-meta">${d.sample ? `<span class="ex-badge">${esc(s.example)}</span>` : ""}${d.warning === "ocr" || d.warning === "ocr_partial"
+                  <span class="doc-meta">${d.sample ? `<span class="ex-badge">${esc(s.example)}</span>` : ""}${d.warning === "ocr" || (d.warning === "ocr_partial" && d.ocrRead)
                     ? `<span class="ocr-badge" title="${esc(s.ocrHint)}">${esc(s.ocrDoc)}</span>` : ""}${d.warning === "ocr_partial"
                     ? `<span class="ocr-badge warn" title="${esc(s.ocrPartialHint)}">${esc(s.ocrPartialDoc)}</span>` : ""}${failed
                     ? `<span class="load-bad">${esc(s.loadFailed)}</span> <button type="button" class="link" data-retry>${esc(s.retry)}</button>`
@@ -1047,7 +1056,7 @@ Reply with only a JSON object {"queries": [q1, q2, q3]}: q1 = the latest questio
   // ------------------------------------------------------------------ whole-document summaries
   const SUMMARY_PART = 60000;  // characters per part; longer documents are read part by part, then combined
   const LANG_NAME = { ar: "Arabic", fr: "French" };
-  const PAGE_REF = /\((?:p\.?|pp\.?|page|ص\.?|صفحة)\s*([\d٠-٩]+)(?:\s*[-–]\s*[\d٠-٩]+)?\)/gi;
+  const PAGE_REF = /\((?:p\.?|pp\.?|page|ص\.?|صفحة|sheet|feuille|الورقة|ورقة)\s*([\d٠-٩]+)(?:\s*[-–]\s*[\d٠-٩]+)?\)/gi;
 
   // how the prompts talk about locations, by kind of document
   const LOCATION = {
@@ -1081,7 +1090,10 @@ ${body}`;
     for (const c of chunksByDoc.get(id) || []) {
       let { lines, pages } = Core.chunkLinePages(c);
       const stripped = lines.map((l) => l.trim());
-      for (let k = Math.min(lines.length, prev.length, 20); k > 0; k--) {
+      // the overlap is at most CHUNK_OVERLAP characters of trailing lines (many if they are short)
+      let longest = 0, total = 0;
+      for (let j = prev.length - 1; j >= 0 && total + prev[j].length <= CHUNK_OVERLAP; j--) { total += prev[j].length + 1; longest++; }
+      for (let k = Math.min(lines.length, prev.length, Math.max(longest, 20)); k > 0; k--) {
         if (stripped.slice(0, k).join("\n") === prev.slice(-k).join("\n")) { lines = lines.slice(k); pages = pages.slice(k); break; }
       }
       prev = stripped;
@@ -1273,7 +1285,7 @@ ${body}`;
       view.answer.classList.remove("caret");
       view.answer.innerHTML = renderSummary(text, id);
       const saved = ok && view.note.hidden;
-      if (ok) metaLine.textContent = saved ? (cachedAt ? T().summaryCached(new Date(cachedAt).toLocaleString(lang === "ar" ? "ar-DZ-u-nu-latn" : "fr-FR", { dateStyle: "medium", timeStyle: "short" })) + " · " : "") + T().summaryNote : "";
+      if (ok) metaLine.textContent = (saved && cachedAt ? T().summaryCached(new Date(cachedAt).toLocaleString(lang === "ar" ? "ar-DZ-u-nu-latn" : "fr-FR", { dateStyle: "medium", timeStyle: "short" })) + " · " : "") + T().summaryNote;
       view.tools.innerHTML = "";
       if (ok && text) {
         const copy = document.createElement("button");
@@ -1290,8 +1302,18 @@ ${body}`;
         again.type = "button";
         again.className = "btn-plain";
         again.textContent = saved ? T().summaryRefresh : T().retry;
-        again.addEventListener("click", () => { if (!busy && docs.has(id)) summarize(id, saved, view); });
+        // anything just generated is made again from scratch (no replay of cut-off notes)
+        again.addEventListener("click", () => { if (!busy && docs.has(id)) summarize(id, saved || ok || refresh, view); });
         view.tools.appendChild(again);
+      }
+      if (!ok && refresh && summaryCache.has(key)) {
+        // redoing failed: the saved summary is still there
+        const back = document.createElement("button");
+        back.type = "button";
+        back.className = "btn-plain";
+        back.textContent = T().summaryShowSaved;
+        back.addEventListener("click", () => { if (!busy && docs.has(id)) summarize(id, false, view); });
+        view.tools.appendChild(back);
       }
       view.tools.hidden = !view.tools.children.length;
       setBusy(false);
